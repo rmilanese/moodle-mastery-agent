@@ -56,24 +56,27 @@ if ($attemptid) {
     );
     $user = core_user::get_user($record->userid, '*', MUST_EXIST);
     $single = new attempt($record, $instance);
+    $results = array_values(array_filter($single->lesson_results(), 'is_array'));
+    $completeinventory = $single->is_finished() && $results
+        && !array_filter($results, static fn($result) => !in_array($result['status'] ?? '', ['assessed', 'notassessed'], true));
 
     echo $OUTPUT->heading(fullname($user), 3);
     echo html_writer::tag('p', get_string('scoreline', 'mod_masteryagent', (object) [
-        'score' => $record->score === null ? '-' : format_float((float) $record->score, 0),
-        'max' => masteryagent_total_grade($instance),
+        'score' => $record->score === null ? '-' : format_float((float) $record->score, 2),
+        'max' => $completeinventory ? array_sum(array_column($results, 'max')) : masteryagent_total_grade($instance),
     ]));
 
-    $results = $single->lesson_results();
-    if (count($results) > 1) {
+    if ($results) {
         $rows = '';
         foreach ($results as $result) {
             $rows .= html_writer::tag(
                 'tr',
                 html_writer::tag('td', s(trim(($result['lesson_id'] ?? '') . ' ' . ($result['title'] ?? ''))))
-                . html_writer::tag('td', s((string) ($result['score'] ?? '')) . ' / '
-                    . (int) ($result['max'] ?? $instance->maxgrade))
+                . html_writer::tag('td', isset($result['score']) ? format_float((float) $result['score'], 2) . ' / '
+                    . (int) ($result['max'] ?? $instance->maxgrade) : get_string('historynotrecorded', 'mod_masteryagent'))
                 . html_writer::tag('td', (int) ($result['turns'] ?? 0))
-                . html_writer::tag('td', s((string) ($result['summary'] ?? '')))
+                . html_writer::tag('td', ($result['status'] ?? '') === 'notassessed'
+                    ? get_string('lessonnotassessed', 'mod_masteryagent') : s((string) ($result['summary'] ?? '')))
             );
         }
         echo html_writer::tag(
@@ -93,14 +96,7 @@ if ($attemptid) {
     }
 
     foreach ($single->messages() as $message) {
-        $label = $message->role === 'agent'
-            ? get_string('roleagent', 'mod_masteryagent')
-            : get_string('rolestudent', 'mod_masteryagent');
-        echo html_writer::div(
-            html_writer::tag('div', $label, ['class' => 'masteryagent-role'])
-            . html_writer::tag('div', nl2br(s($message->message)), ['class' => 'masteryagent-text']),
-            'masteryagent-message ' . ($message->role === 'agent' ? 'masteryagent-agent' : 'masteryagent-student')
-        );
+        echo \mod_masteryagent\output\conversation_view::render_message($message);
     }
 
     if (!empty($record->summary)) {
@@ -236,13 +232,18 @@ $table->attributes['class'] = 'table table-sm generaltable';
 foreach ($attempts as $record) {
     $user = core_user::get_user($record->userid);
     $done = json_decode((string) $record->lessonscores, true);
+    $done = is_array($done) ? array_filter($done, 'is_array') : [];
+    $assessed = array_filter($done, static fn($result) => ($result['status'] ?? 'assessed') !== 'notassessed');
+    $completeinventory = $record->status === attempt::STATUS_FINISHED && $done
+        && !array_filter($done, static fn($result) => !in_array($result['status'] ?? '', ['assessed', 'notassessed'], true));
     $table->data[] = [
         $user ? fullname($user) : (string) $record->userid,
         $record->status === attempt::STATUS_FINISHED
             ? get_string('statusfinished', 'mod_masteryagent')
             : get_string('statusinprogress', 'mod_masteryagent'),
-        (is_array($done) ? count($done) : 0) . ' / ' . $listsequence->count(),
-        $record->score === null ? '-' : format_float((float) $record->score, 0) . ' / ' . $totalgrade,
+        count($assessed) . ' / ' . ($completeinventory ? count($done) : $listsequence->count()),
+        $record->score === null ? '-' : format_float((float) $record->score, 2) . ' / '
+            . ($completeinventory ? array_sum(array_column($done, 'max')) : $totalgrade),
         $record->timefinished ? userdate($record->timefinished) : '-',
         html_writer::link(
             new moodle_url('/mod/masteryagent/report.php', ['id' => $cm->id, 'attempt' => $record->id]),

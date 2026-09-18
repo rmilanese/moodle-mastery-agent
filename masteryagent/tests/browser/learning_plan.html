@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Mastery agent learning-plan browser tests</title>
+<link rel="stylesheet" href="../../styles.css">
+<style>body{font:16px system-ui;margin:2rem}li{margin:.5rem 0}.pass{color:#176237}.fail{color:#b02020}#fixture{border:1px solid #ccc;padding:1rem;margin-top:2rem}</style></head>
+<body><h1>Learning-plan print and copy tests</h1><p>Real browser DOM and production module; clipboard and print APIs are mocked.</p>
+<p id="summary">Running...</p><ol id="results"></ol><div id="fixture"></div>
+<script>
+window.define = (name,deps,factory) => {
+    const exports = {};
+    const modules = {require:()=>{},exports};
+    factory(...deps.map(dependency=>modules[dependency]));
+    window.learningPlan = exports;
+};
+</script><script src="../../amd/build/learning_plan.min.js"></script><script>
+const q = selector => document.querySelector('#fixture '+selector);
+const assert = (condition,message) => {if(!condition)throw Error(message);};
+const settle = () => new Promise(resolve=>setTimeout(resolve,0));
+const planText = 'My learning plan\n\nStrengths\n- Compared evidence & explained why.\n\nNext steps\n- Review p. 12: https://example.test/reading?a=1&b=2\n- Explain café examples in your own words.\n';
+const escapeText = value => value.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+const mount = (initialize = true) => {
+    document.querySelector('#fixture').innerHTML = '<button id="outside-export" type="button">Course navigation</button>'
+        +'<div id="masteryagent-export" class="masteryagent-export" data-copied="Learning plan copied."'
+        +' data-copyfailed="Automatic copy is unavailable. Copy the text below manually."'
+        +' data-printfailed="Printing is unavailable. Use your browser print command.">'
+        +'<h2>My learning plan</h2><button type="button" data-action="print-plan" hidden>Print learning plan</button>'
+        +'<button type="button" data-action="copy-plan" hidden>Copy study checklist</button>'
+        +'<p data-region="copy-status" role="status" aria-live="polite"></p>'
+        +'<details data-region="copy-fallback"><summary>Copy the plan manually</summary>'
+        +'<label for="plan-text">Learning-plan text</label><textarea id="plan-text" data-region="plan-text"'
+        +' readonly rows="8">'+escapeText(planText)+'</textarea></details></div>';
+    if(initialize)window.learningPlan.init('#masteryagent-export');
+};
+const withBrowserApis = async (clipboard,print,run) => {
+    const descriptor = Object.getOwnPropertyDescriptor(navigator,'clipboard');
+    const originalPrint = window.print;
+    try {
+        Object.defineProperty(navigator,'clipboard',{configurable:true,value:clipboard});
+        window.print = print;
+        await run();
+    } finally {
+        if(descriptor)Object.defineProperty(navigator,'clipboard',descriptor);
+        else delete navigator.clipboard;
+        window.print = originalPrint;
+    }
+};
+const tests = [
+['Manual readonly text is available before initialization without invoking clipboard or print',async()=>{
+    let copies=0;let prints=0;
+    await withBrowserApis({writeText:()=>{copies++;return Promise.resolve();}},()=>{prints++;},async()=>{
+        mount(false);
+        const text=q('[data-region="plan-text"]');
+        assert(text.readOnly && text.value===planText,'Manual-copy text is missing, editable, or changed');
+        assert(q('[data-action="copy-plan"]').hidden && q('[data-action="print-plan"]').hidden,
+            'JavaScript-only buttons appeared before initialization');
+        q('summary').click();assert(q('[data-region="copy-fallback"]').open,'Manual details did not open natively');
+        assert(copies===0 && prints===0,'Rendering or opening manual text triggered an external action');
+        window.learningPlan.init('#masteryagent-export');
+        assert(!q('[data-action="copy-plan"]').hidden && !q('[data-action="print-plan"]').hidden,
+            'Initialization did not reveal the supported controls');
+        assert(copies===0 && prints===0,'Initialization printed or copied automatically');
+    });
+}],
+['Copy sends the exact plan once while pending, reports success, and preserves focus',async()=>{
+    const values=[];let finish;
+    await withBrowserApis({writeText:value=>{values.push(value);return new Promise(resolve=>{finish=resolve;});}},()=>{},async()=>{
+        mount();const button=q('[data-action="copy-plan"]');button.focus();button.click();button.click();
+        assert(values.length===1 && values[0]===planText,'Copy changed text or duplicated a pending request');
+        assert(button.getAttribute('aria-disabled')==='true','Pending copy was not marked unavailable');
+        finish();await settle();
+        assert(q('[data-region="copy-status"]').textContent==='Learning plan copied.','Success message missing');
+        assert(document.activeElement===button,'Successful copy moved focus');
+        assert(!q('[data-region="copy-fallback"]').open,'Successful copy opened unnecessary manual fallback');
+        assert(!button.hasAttribute('aria-disabled') && !button.hasAttribute('aria-busy'),'Copy remained busy');
+        button.click();assert(values.length===2,'A new explicit copy was blocked after completion');
+        finish();await settle();
+    });
+}],
+['Rejected copy opens and selects the unchanged readonly fallback with a safe localized message',async()=>{
+    await withBrowserApis({writeText:()=>Promise.reject(Error('<img src=x onerror=alert(1)>'))},()=>{},async()=>{
+        mount();const button=q('[data-action="copy-plan"]');button.focus();button.click();await settle();
+        const text=q('[data-region="plan-text"]');
+        assert(q('[data-region="copy-fallback"]').open,'Rejected copy did not reveal manual text');
+        assert(document.activeElement===text && text.selectionStart===0 && text.selectionEnd===planText.length,
+            'Fallback text was not focused and selected for manual copying');
+        assert(text.readOnly && text.value===planText,'Fallback altered the learning plan');
+        assert(q('[data-region="copy-status"]').textContent===q('#masteryagent-export').dataset.copyfailed,
+            'Localized fallback message was replaced by the raw clipboard error');
+        assert(!q('img'),'Clipboard error was rendered as HTML');
+    });
+}],
+['An unavailable clipboard API still opens the manual copy fallback',async()=>{
+    await withBrowserApis(undefined,()=>{},async()=>{
+        mount();const button=q('[data-action="copy-plan"]');button.focus();button.click();await settle();
+        const text=q('[data-region="plan-text"]');
+        assert(q('[data-region="copy-fallback"]').open && document.activeElement===text,
+            'Missing Clipboard API left the student without a usable fallback');
+        assert(text.selectionStart===0 && text.selectionEnd===text.value.length,'Manual copy text was not selected');
+        assert(q('[data-region="copy-status"]').textContent===q('#masteryagent-export').dataset.copyfailed,
+            'Missing API did not announce recovery instructions');
+    });
+}],
+['A late clipboard failure reveals recovery without stealing focus from other navigation',async()=>{
+    let reject;
+    await withBrowserApis({writeText:()=>new Promise((resolve,rejectCopy)=>{reject=rejectCopy;})},()=>{},async()=>{
+        mount();const button=q('[data-action="copy-plan"]');button.focus();button.click();
+        const outside=q('#outside-export');outside.focus();reject(Error('Clipboard denied'));await settle();
+        assert(document.activeElement===outside,'Late failure stole focus after the student moved elsewhere');
+        assert(q('[data-region="copy-fallback"]').open,'Late failure did not reveal the manual alternative');
+        const text=q('[data-region="plan-text"]');
+        assert(text.selectionStart===text.selectionEnd,'Late failure selected text while the student was elsewhere');
+        assert(q('[data-region="copy-status"]').textContent===q('#masteryagent-export').dataset.copyfailed,
+            'Late failure did not announce recovery');
+    });
+}],
+['Printing requires an explicit click, initialization stays idempotent, and print errors are explained',async()=>{
+    let prints=0;let copies=0;let shouldFail=false;
+    await withBrowserApis({writeText:()=>{copies++;return Promise.resolve();}},()=>{
+        prints++;if(shouldFail)throw Error('Print unavailable');
+    },async()=>{
+        mount(false);window.learningPlan.init('#masteryagent-export');window.learningPlan.init('#masteryagent-export');
+        assert(prints===0 && copies===0,'Initialization invoked print or clipboard');
+        const button=q('[data-action="print-plan"]');button.focus();button.click();
+        assert(prints===1 && copies===0,'Explicit print was duplicated or invoked clipboard');
+        assert(document.activeElement===button,'Printing moved page focus');
+        shouldFail=true;button.click();
+        assert(prints===2,'Second explicit print was not attempted once');
+        assert(q('[data-region="copy-status"]').textContent===q('#masteryagent-export').dataset.printfailed,
+            'Print failure did not show the localized browser-command guidance');
+    });
+}],
+];
+(async()=>{
+    let passed=0;
+    for(const [name,run] of tests){
+        const item=document.createElement('li');
+        try{await run();passed++;item.className='pass';item.textContent='PASS - '+name;}
+        catch(error){item.className='fail';item.textContent='FAIL - '+name+': '+error.message;}
+        document.querySelector('#results').append(item);
+    }
+    document.querySelector('#summary').textContent=`${passed}/${tests.length} tests passed`;
+    document.title=`${passed}/${tests.length} - Learning-plan tests`;
+})();
+</script></body></html>
