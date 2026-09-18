@@ -143,6 +143,7 @@ final class attempt_test extends \advanced_testcase {
 
         $results = (new attempt($record, $instance))->lesson_results();
         $this->assertCount(1, $results);
+        $this->assertSame('assessed', $results[0]['status']);
         $this->assertSame('S01', $results[0]['lesson_id']);
         $this->assertSame(1, (new attempt($record, $instance))->lessons_mastered());
         $this->assertTrue((new attempt($record, $instance))->met_threshold());
@@ -256,21 +257,138 @@ final class attempt_test extends \advanced_testcase {
         $this->assertTrue($attempt->is_finished());
         $record = $DB->get_record('masteryagent_attempt', ['id' => $attempt->get_id()]);
         $this->assertSame(4.0, (float) $record->score, 'lessons never reached contribute nothing');
-        $this->assertCount(1, (new attempt($record, $instance))->lesson_results());
+        $reloaded = new attempt($record, $instance);
+        $results = $reloaded->lesson_results();
+        $this->assertCount(3, $results);
+        $this->assertSame(['assessed', 'notassessed', 'notassessed'], array_column($results, 'status'));
+        $this->assertSame(['S01', 'S02', 'S03'], array_column($results, 'lesson_id'));
+        foreach ([1, 2] as $index) {
+            $this->assertSame($sequence->key_for($index), $results[$index]['key']);
+            $this->assertSame($sequence->get($index)->title(), $results[$index]['title']);
+            $this->assertSame(0, $results[$index]['score']);
+            $this->assertSame((int) $instance->maxgrade, $results[$index]['max']);
+            $this->assertSame($sequence->get($index)->learning_resources(), $results[$index]['learning_resources']);
+            foreach (['summary', 'dimensions', 'strengths', 'gaps', 'next_step'] as $feedback) {
+                $this->assertArrayNotHasKey($feedback, $results[$index]);
+            }
+        }
+        $summaryprompts = array_values(array_filter($this->sentprompts,
+            static fn($prompt) => str_contains($prompt, '=== LESSON RESULTS ===')));
+        $this->assertCount(1, $summaryprompts);
+        $this->assertStringContainsString('S01', $summaryprompts[0]);
+        $this->assertStringNotContainsString('S02', $summaryprompts[0]);
+        $this->assertStringNotContainsString('S03', $summaryprompts[0]);
+        $instance->sequencejson = '[]';
+        $instance->lessonjson = '';
+        $instance->threshold = 0;
+        $historical = new attempt($record, $instance);
+        $this->assertSame($results, $historical->lesson_results());
+        $this->assertSame(1, $historical->lessons_mastered(), 'Skipped lessons never count as mastered at threshold zero.');
+        $this->assertFalse($historical->met_threshold());
     }
 
     public function test_finishing_before_answering_anything_scores_zero(): void {
         global $DB;
-        [$instance, $sequence, $contextid] = $this->make_activity('S01');
+        [$instance, $sequence, $contextid] = $this->make_activity('S01,S02,S03', ['threshold' => 0]);
         $this->stub_ai();
 
         $attempt = attempt::start($instance, (int) $this->student->id, $sequence);
+        $attempt->add_message('agent', 'Another evaluator message without a learner answer.', $sequence->key_for(0));
         $attempt->finish_now($sequence, $contextid);
 
         $record = $DB->get_record('masteryagent_attempt', ['id' => $attempt->get_id()]);
         $this->assertTrue($attempt->is_finished());
         $this->assertSame(0.0, (float) $record->score);
-        $this->assertSame([], (new attempt($record, $instance))->lesson_results());
+        $reloaded = new attempt($record, $instance);
+        $this->assertSame(['notassessed', 'notassessed', 'notassessed'],
+            array_column($reloaded->lesson_results(), 'status'));
+        $this->assertSame(0, $reloaded->lessons_mastered());
+        $this->assertFalse($reloaded->met_threshold());
+        $this->assertSame('', $record->summary);
+        $this->assertCount(0, $this->sentprompts);
+    }
+
+    public function test_early_submission_scores_the_answered_open_lesson_without_opening_another_question(): void {
+        global $DB;
+        [$instance, $sequence, $contextid] = $this->make_activity('S01,S02,S03');
+        $this->stub_ai(['closeafter' => 99, 'scores' => ['S01' => 3]]);
+        $attempt = attempt::start($instance, (int) $this->student->id, $sequence);
+        $attempt->submit('My answer so far.', $sequence, $contextid);
+        $messages = serialize($attempt->messages());
+        $attempt->finish_now($sequence, $contextid);
+        $this->assertTrue($attempt->is_finished());
+        $this->assertSame($messages, serialize($attempt->messages()), 'Final submission added a transition or next question.');
+        $this->assertSame(0, $attempt->lesson_index());
+        $this->assertSame(1, $attempt->turns_used());
+        $this->assertSame(['assessed', 'notassessed', 'notassessed'], array_column($attempt->lesson_results(), 'status'));
+        $this->assertCount(1, array_filter($this->sentprompts,
+            static fn($prompt) => str_contains($prompt, '=== FULL CONVERSATION ===')));
+        $this->assertCount(1, array_filter($this->sentprompts,
+            static fn($prompt) => str_contains($prompt, '=== LESSON RESULTS ===')));
+        $record = $DB->get_record('masteryagent_attempt', ['id' => $attempt->get_id()], '*', MUST_EXIST);
+        $calls = count($this->sentprompts);
+        $attempt->finish_now($sequence, $contextid);
+        $this->assertEquals($record, $DB->get_record('masteryagent_attempt', ['id' => $attempt->get_id()], '*', MUST_EXIST));
+        $this->assertCount($calls, $this->sentprompts, 'Repeated finalization generated another assessment.');
+
+        // A repeated question key does not make answers from its earlier occurrence count in the newly opened lesson.
+        [$instance, $sequence, $contextid] = $this->make_activity('S01,S01');
+        $this->assertSame(2, $sequence->count());
+        $this->stub_ai(['closeafter' => 1]);
+        $repeated = attempt::start($instance, (int) $this->student->id, $sequence);
+        $repeated->submit('Answered the first occurrence only.', $sequence, $contextid);
+        $this->assertSame(0, $repeated->turns_used());
+        $messages = serialize($repeated->messages());
+        $repeated->finish_now($sequence, $contextid);
+        $this->assertSame(['assessed', 'notassessed'], array_column($repeated->lesson_results(), 'status'));
+        $this->assertSame($messages, serialize($repeated->messages()));
+        $this->assertCount(1, array_filter($this->sentprompts,
+            static fn($prompt) => str_contains($prompt, '=== FULL CONVERSATION ===')));
+    }
+
+    public function test_decimal_scores_agree_in_saved_feedback_total_and_mastery_decision(): void {
+        global $DB;
+        foreach ([[2.6, 2.6, false], [2.999, 3.0, true], [2.994, 2.99, false]] as [$provided, $expected, $mastered]) {
+            [$instance, $sequence, $contextid] = $this->make_activity('S01', ['threshold' => 3]);
+            $this->stub_ai(['scores' => ['S01' => $provided]]);
+            $attempt = attempt::start($instance, (int) $this->student->id, $sequence);
+            $attempt->submit('A completed answer.', $sequence, $contextid);
+            $record = $DB->get_record('masteryagent_attempt', ['id' => $attempt->get_id()], '*', MUST_EXIST);
+            $reloaded = new attempt($record, $instance);
+            $this->assertSame($expected, (float) $reloaded->lesson_results()[0]['score']);
+            $this->assertSame($expected, (float) $record->score);
+            $this->assertSame($mastered, $reloaded->met_threshold());
+            $this->assertSame($mastered ? 1 : 0, $reloaded->lessons_mastered());
+        }
+    }
+
+    public function test_legacy_results_without_status_remain_assessed_without_rewriting_them(): void {
+        [$instance, $sequence, $contextid] = $this->make_activity('S01,S02');
+        $attempt = attempt::start($instance, (int) $this->student->id, $sequence);
+        $record = $attempt->get_record();
+        $record->status = attempt::STATUS_FINISHED;
+        $record->score = 3.5;
+        $record->lessonscores = json_encode([['key' => $sequence->key_for(0), 'score' => 3.5, 'max' => 4]]);
+        $original = $record->lessonscores;
+        $legacy = new attempt($record, $instance);
+        $this->assertSame(1, $legacy->lessons_mastered());
+        $this->assertTrue($legacy->met_threshold());
+        $this->assertSame($original, $legacy->get_record()->lessonscores);
+        $this->assertArrayNotHasKey('status', $legacy->lesson_results()[0]);
+
+        // A newly finalized older active attempt gets a complete inventory without changing existing feedback.
+        $activerecord = clone $record;
+        $activerecord->status = attempt::STATUS_INPROGRESS;
+        $activerecord->lessonindex = 1;
+        $activerecord->turnsused = 0;
+        $active = new attempt($activerecord, $instance);
+        $active->add_message('agent', $sequence->get(1)->question_text(), $sequence->key_for(1));
+        $this->stub_ai();
+        $active->finish_now($sequence, $contextid);
+        $this->assertSame(['assessed', 'notassessed'], array_column($active->lesson_results(), 'status'));
+        $first = $active->lesson_results()[0];
+        unset($first['status']);
+        $this->assertSame(json_decode($original, true)[0], $first);
     }
 
     public function test_a_provider_failure_keeps_the_attempt_open(): void {
