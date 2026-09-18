@@ -80,6 +80,17 @@ $string['turnsleft'] = 'Replies remaining: {$a}';
 $string['replyplaceholder'] = 'Write your answer here';
 $string['sendreply'] = 'Send reply';
 $string['finishnow'] = 'End and score now';
+$string['saveandleave'] = 'Save and leave';
+$string['pausehelp'] = 'Save your place and any unsent answer, then return to the course. You can continue this attempt later without submitting a final grade.';
+$string['pausesaved'] = 'Your place and draft have been saved. Open this activity again to continue your assessment.';
+$string['draftrestored'] = 'Your saved draft is below. It has not been sent to the evaluator.';
+$string['finishassessment'] = 'Submit final assessment…';
+$string['finishprogress'] = 'Lessons completed: {$a->done} of {$a->total}.';
+$string['finishconsequences'] = 'This ends your attempt and scores only the answers you have already sent. You cannot resume this attempt after submitting. Choose Save and leave if you want to continue later.';
+$string['finishunanswered'] = 'Lessons without a submitted answer: {$a}. These lessons contribute 0 points to your total score.';
+$string['finishunsent'] = 'Before submitting your final assessment, send or clear any unsent answer in the reply box. Choose Save and leave to keep it for later.';
+$string['confirmfinish'] = 'Yes, submit and score';
+$string['finishconfirmationrequired'] = 'Open Submit final assessment and confirm that you want to end and score this attempt.';
 $string['tryagain'] = 'Start a new attempt';
 $string['scoreline'] = 'Score: {$a->score} of {$a->max}';
 $string['verdictmet'] = 'Mastery threshold met.';
@@ -138,3 +149,27 @@ $string['attemptnotavailable'] = 'This action is not available for the current a
 $string['replyrequired'] = 'Enter a reply before sending it.';
 $string['replytoolong'] = 'Your reply must contain no more than {$a} characters.';
 $string['recovereddraft'] = 'Your unsent draft (copy it before starting another attempt)';
+
+// Student learning plan.
+$string['learningstrengths'] = 'What you understand';
+$string['learninggaps'] = 'What needs work';
+$string['learningnextstep'] = 'What to do next';
+$string['learningstrengthsempty'] = 'No specific strengths were recorded for this lesson.';
+$string['learninggapsempty'] = 'No specific gaps were recorded. This does not mean every learning objective was assessed.';
+$string['learningnextstepempty'] = 'Review the feedback and course readings, then explain the topic again in your own words.';
+$string['learningreadings'] = 'Course readings';
+$string['learningreadingshelp'] = 'Use these lesson references to revisit the feedback above. Page and section references are shown where available.';
+$string['learningreadingsempty'] = 'No reading references were saved with this result. Check the lesson materials in your course.';
+$string['learningbreakdown'] = 'Feedback on assessed skills';
+$string['learningskill'] = 'Assessed skill';
+$string['learningdimensionfallback'] = 'Assessed skill {$a}';
+$string['learningverdictunknown'] = 'Not recorded';
+
+// Conversation navigation.
+$string['conversationnavigation'] = 'Conversation navigation';
+$string['conversationsection'] = 'Conversation section {$a}';
+$string['currentlesson'] = 'Current lesson';
+$string['latestagentmessage'] = 'Latest evaluator message';
+$string['jumptoreply'] = 'Jump to your reply';
+$string['jumptoresults'] = 'Jump to your results';
+$string['assessmentresultsready'] = 'Your assessment results and learning feedback are ready.';

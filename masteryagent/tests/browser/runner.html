@@ -1,5 +1,6 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><title>Mastery agent AJAX regression tests</title>
+<link rel="stylesheet" href="../../styles.css">
 <style>body{font:16px system-ui;margin:2rem}li{margin:.5rem 0}.pass{color:#176237}.fail{color:#b02020}#fixture{border:1px solid #ccc;padding:1rem;margin-top:2rem}</style></head>
 <body><h1>Mastery agent AJAX regression tests</h1><p>Real browser DOM; mocked Moodle AJAX responses. No Moodle server or AI provider is called.</p>
 <p id="summary">Running…</p><ol id="results"></ol><div id="fixture"></div>
@@ -24,23 +25,96 @@ const settle = () => new Promise(resolve => setTimeout(resolve, 0));
 const form = (action, state, extra = '') => `<form data-action="${action}" method="post" action="unexpected-navigation.html">
 <input name="state" type="hidden" value="${state}">${extra}<button type="submit">${action}</button></form>`;
 const active = (state = 'state1', id = 1) => `<div class="masteryagent-agent" data-message-id="${id}">Question ${id}</div>
-${form('reply', state, '<label for="reply">Reply</label><textarea id="reply" name="reply" required></textarea>')}${form('finish',state)}`;
+<form data-action="reply" method="post" action="unexpected-navigation.html">
+<input name="state" type="hidden" value="${state}"><input name="confirmed" type="hidden" value="1">
+<label for="reply">Reply</label><textarea id="reply" name="reply" required maxlength="8000"></textarea>
+<button name="action" value="reply">Send reply</button>
+<button name="action" value="pause" formnovalidate>Save and leave</button>
+<details><summary>Submit final assessment</summary><p>Unanswered lessons contribute zero.</p>
+<button name="action" value="finish" formnovalidate>Yes, submit and score</button></details></form>`;
 const finished = () => `<div data-region="results" tabindex="-1">Score: 3 of 4</div>${form('start', 'finished')}`;
+const history = (open = false) => `<details class="masteryagent-history" data-region="lesson-history" data-section-key="lesson1" ${open ? 'open' : ''}>
+<summary id="lesson1">Earlier lesson</summary><div id="old-message" class="masteryagent-agent" data-message-id="100" tabindex="-1">Old feedback</div></details>`;
+const navigable = (state = 'state1', id = 1, open = false) => `<nav data-region="conversation-navigation" aria-label="Conversation navigation">
+<a id="review-old" href="#old-message" data-conversation-jump="old-message">Earlier feedback</a>
+<a id="jump-reply" href="#reply" data-conversation-jump="reply">Jump to reply</a></nav>${history(open)}${active(state, id)}`;
 const mount = (html = form('start','new')) => {
     pending.length = 0; filterUpdates = 0;
-    document.querySelector('#fixture').innerHTML = `<div id="masteryagent-app" data-cmid="42" data-processing="Working" data-updated="Updated" data-error="Request failed">
-<div data-region="error" role="alert" tabindex="-1" hidden></div><div data-region="status" role="status"></div>
+    document.querySelector('#fixture').innerHTML = `<div id="masteryagent-app" class="masteryagent-app" data-cmid="42" data-processing="Working" data-updated="Updated" data-error="Request failed" data-unsent="Send or clear your draft first" data-confirmrequired="Confirm final submission" data-resultsready="Results and feedback are ready">
+<div data-region="error" role="alert" tabindex="-1" hidden></div><div data-region="status" aria-hidden="true"></div>
+<div data-region="announcements" class="masteryagent-sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
 <div data-region="draft" hidden><textarea readonly></textarea></div><div data-region="content" aria-busy="false">${html}</div></div>`;
     window.conversation.init('#masteryagent-app');
 };
 const submit = (action, reply) => {
     if (reply !== undefined) q('[name="reply"]').value = reply;
-    q(`form[data-action="${action}"]`).requestSubmit();
+    const button = q(`button[name="action"][value="${action}"]`);
+    if (button) button.form.requestSubmit(button);
+    else q(`form[data-action="${action}"]`).requestSubmit();
 };
 const respond = async (html, stale = false, warning = '') => {
     pending.at(-1).resolve({html, stale, warning}); await settle();
 };
 const tests = [
+['Navigation reveals collapsed feedback and moves focus to the destination', async () => {
+    mount(navigable());q('#review-old').focus();q('#review-old').click();
+    assert(q('[data-region="lesson-history"]').open,'History stayed hidden');
+    assert(document.activeElement===q('#old-message'),'Feedback was not focused');
+    q('#jump-reply').click();assert(document.activeElement===q('[name="reply"]'),'Reply was not focused');
+    assert(pending.length===0,'Navigation sent a request');
+}],
+['History opened while waiting stays open and retains the reading focus', async () => {
+    mount(navigable());submit('reply','Answer');q('#review-old').click();
+    await respond(navigable('state2',3));
+    assert(q('[data-region="lesson-history"]').open,'Open history collapsed');
+    assert(document.activeElement===q('#old-message'),'Update stole focus from earlier feedback');
+}],
+['History closed while waiting stays closed after replacement', async () => {
+    mount(navigable('state1',1,true));submit('reply','Answer');
+    q('#lesson1').click();assert(!q('[data-region="lesson-history"]').open,'Summary did not close');
+    await respond(navigable('state2',3,true));
+    assert(!q('[data-region="lesson-history"]').open,'Closed history reopened');
+}],
+['Navigation focus survives replacement without losing the reply', async () => {
+    mount(navigable());submit('reply','Answer');q('#jump-reply').focus();
+    await respond(navigable('state2',3));
+    assert(document.activeElement===q('#jump-reply'),'Navigation focus lost');
+    q('#jump-reply').click();assert(document.activeElement===q('[name="reply"]'),'Replaced shortcut stopped working');
+}],
+['A newly completed lesson remains visible if its message is being read', async () => {
+    const message='<div id="reading-now" tabindex="-1">Current question</div>';
+    mount(`<section data-region="current-lesson">${message}</section>${active()}`);
+    submit('reply','Answer');q('#reading-now').focus();
+    await respond(`<details data-region="lesson-history" data-section-key="just-closed"><summary>Earlier lesson</summary>${message}</details>${active('state2',3)}`);
+    assert(q('[data-region="lesson-history"]').open,'Focused message was hidden after the lesson closed');
+    assert(document.activeElement===q('#reading-now'),'Reading focus was lost after the lesson closed');
+}],
+['Only new evaluator content is announced, using text rather than HTML', async () => {
+    mount(navigable());assert(q('[data-region="announcements"]').textContent==='','Initial history was announced');
+    submit('reply','Answer');assert(q('[data-region="announcements"]').textContent==='Working','Processing was not announced');
+    await respond(navigable('state2',3).replace('Question 3','&lt;img src=x&gt; New feedback'));
+    const region=q('[data-region="announcements"]');
+    assert(region.textContent==='<img src=x> New feedback','Old messages or status mixed with new feedback');
+    assert(!region.querySelector('img'),'Announcement interpreted text as HTML');
+    assert(region.getAttribute('aria-live')==='polite','Announcement is not polite');
+}],
+['Stale and failed responses clear processing without replaying transcript', async () => {
+    mount(navigable());submit('reply','Answer');await respond(navigable('state2',3),true,'Changed in another tab');
+    assert(q('[data-region="announcements"]').textContent==='','Stale transcript was announced');
+    submit('reply');pending.at(-1).reject(Error('Offline'));await settle();
+    assert(q('[data-region="announcements"]').textContent==='','Processing announcement remained after failure');
+}],
+['Final results are announced while preserving an open history section', async () => {
+    mount(navigable('state1',1,true));submit('finish');await respond(history()+finished());
+    assert(q('[data-region="announcements"]').textContent==='Results and feedback are ready','Results announcement missing');
+    assert(q('[data-region="lesson-history"]').open,'Open history lost on completion');
+    assert(document.activeElement===q('[data-region="results"]'),'Results were not focused');
+}],
+['Long message text wraps within a narrow conversation panel', async () => {
+    mount(`<div class="masteryagent-message">${'LongUnbrokenWord'.repeat(60)}</div>`);
+    const panel=q('[data-region="content"]');panel.style.width='240px';
+    assert(panel.scrollWidth<=panel.clientWidth+1,'Long text caused horizontal overflow');
+}],
 ['Begin updates the page and focuses the reply without navigation', async () => {
     mount(); submit('start');
     assert(q('button').disabled, 'Start button should be disabled while processing');
@@ -52,10 +126,11 @@ const tests = [
 }],
 ['Repeated submit and finish are blocked while a reply is pending', async () => {
     mount(active()); submit('reply', 'My answer');
-    for(const action of ['reply','finish']) q(`form[data-action="${action}"]`).dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));
+    for(const action of ['reply','finish']) q('form').dispatchEvent(new SubmitEvent('submit',{
+        bubbles:true,cancelable:true,submitter:q(`button[value="${action}"]`)}));
     assert(pending.length === 1, 'Duplicate request sent');
     assert(q('[name="reply"]').readOnly, 'Reply remained editable while pending');
-    assert(q('form[data-action="finish"] button').disabled, 'Finish remained enabled');
+    assert(q('button[value="finish"]').disabled, 'Finish remained enabled');
     await respond(active('state2',3));
     assert(q('[name="reply"]').value === '', 'Successful reply did not clear draft');
     assert(!q('[name="reply"]').readOnly, 'Reply remained read-only');
@@ -107,6 +182,64 @@ const tests = [
     assert(q('[name="reply"]').value==='Keep my draft','Draft lost');
     assert(!q('form[data-action="reply"] button').disabled,'Form disabled after error');
     assert(!q('[data-region="error"]').hidden,'Error missing');
+}],
+['Opening and closing final confirmation keeps the draft and sends nothing', async () => {
+    mount(active());q('[name="reply"]').value='Still writing';
+    assert(!q('details').open,'Confirmation should begin closed');
+    q('summary').click();assert(q('details').open,'Confirmation did not open');
+    q('summary').click();assert(!q('details').open,'Confirmation did not close');
+    assert(pending.length===0,'Opening confirmation submitted the assessment');
+    assert(q('[name="reply"]').value==='Still writing','Draft changed');
+}],
+['Unsent text blocks final submission until it is sent or cleared', async () => {
+    mount(active());submit('finish','Still writing');
+    assert(pending.length===0,'Unsent answer was discarded');
+    assert(q('[data-region="error"]').textContent==='Send or clear your draft first','Missing draft warning');
+    assert(document.activeElement===q('[name="reply"]'),'Draft should receive focus');
+    assert(q('[name="reply"]').value==='Still writing','Draft lost');
+    submit('finish','');
+    assert(pending.length===1 && pending[0].request.args.action==='finish','Empty reply incorrectly blocked finish');
+    assert(pending[0].request.args.confirmed===true,'Explicit confirmation missing');
+    await respond(finished());
+}],
+['Save and leave uses a native POST containing the exact draft and pause action', async () => {
+    for(const draft of ['', '  Unsent answer\nsecond line']) {
+        mount(active());let captured;
+        q('#masteryagent-app').addEventListener('submit',event=>{
+            captured={blocked:event.defaultPrevented,data:new FormData(event.target,event.submitter)};
+            event.preventDefault();
+        },{once:true});
+        submit('pause',draft);
+        assert(captured && !captured.blocked,'Save and leave should use normal form submission');
+        assert(captured.data.get('action')==='pause','Pause action missing from POST');
+        assert(captured.data.get('reply')===draft,'Draft changed or missing from POST');
+        assert(captured.data.get('state')==='state1','Revision missing from POST');
+        assert(pending.length===0,'Pause called the AI conversation AJAX action');
+    }
+}],
+['Save and leave is blocked while an answer is being processed', async () => {
+    mount(active());submit('reply','Already sending');
+    const event=new SubmitEvent('submit',{bubbles:true,cancelable:true,submitter:q('button[value="pause"]')});
+    q('form').dispatchEvent(event);
+    assert(event.defaultPrevented,'Pause navigated away during a reply');
+    assert(pending.length===1,'Concurrent request created');
+    await respond(active('state2',3));
+}],
+['An old form without confirmation cannot finalize an attempt', async () => {
+    mount(active());q('[name="confirmed"]').remove();submit('finish');
+    assert(pending.length===0,'Unconfirmed request sent');
+    assert(q('[data-region="error"]').textContent==='Confirm final submission','Confirmation warning missing');
+}],
+['Returning through browser history restores usable controls after pausing', async () => {
+    mount(active());
+    q('#masteryagent-app').addEventListener('submit',event=>event.preventDefault(),{once:true});
+    submit('pause','Saved for later');
+    window.dispatchEvent(new PageTransitionEvent('pageshow',{persisted:true}));
+    assert(q('[data-region="status"]').textContent==='','Stale processing status remained');
+    submit('reply','Saved for later');
+    assert(pending.length===1,'Back navigation left the conversation blocked');
+    await respond(active('state2',3),true,'Review latest conversation');
+    assert(q('[name="reply"]').value==='Saved for later','History recovery lost the draft');
 }],
 ];
 (async()=>{
