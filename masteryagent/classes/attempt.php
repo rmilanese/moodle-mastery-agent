@@ -79,6 +79,64 @@ class attempt {
     }
 
     /**
+     * Fetch one attempt owned by a learner in this activity.
+     *
+     * The same missing-record failure covers unknown IDs and attempts outside this scope.
+     * Callers must establish course access before supplying the current learner's user ID.
+     *
+     * @param \stdClass $instance Activity instance record.
+     * @param int $userid Learner user ID.
+     * @param int $attemptid Attempt ID.
+     * @return self
+     * @throws \dml_missing_record_exception When no attempt matches all three identifiers.
+     */
+    public static function get_for_user(\stdClass $instance, int $userid, int $attemptid): self {
+        global $DB;
+        $record = $DB->get_record('masteryagent_attempt', [
+            'id' => $attemptid, 'masteryagentid' => $instance->id, 'userid' => $userid,
+        ], '*', MUST_EXIST);
+        return new self($record, $instance);
+    }
+
+    /**
+     * Count a learner's attempts in this activity, including unfinished attempts.
+     *
+     * @param \stdClass $instance Activity instance record.
+     * @param int $userid Learner user ID.
+     * @return int
+     */
+    public static function count_for_user(\stdClass $instance, int $userid): int {
+        global $DB;
+        return $DB->count_records('masteryagent_attempt', [
+            'masteryagentid' => $instance->id, 'userid' => $userid,
+        ]);
+    }
+
+    /**
+     * Fetch a bounded page of a learner's attempt metadata, newest ID first.
+     *
+     * Listing history does not load drafts, feedback, evidence or lesson result payloads.
+     * Negative pages start at the first page; page size is restricted to 1 through 100.
+     *
+     * @param \stdClass $instance Activity instance record.
+     * @param int $userid Learner user ID.
+     * @param int $page Zero-based page number.
+     * @param int $perpage Requested page size (default 10).
+     * @return \stdClass[] Summary records keyed by attempt ID.
+     */
+    public static function page_for_user(\stdClass $instance, int $userid, int $page = 0, int $perpage = 10): array {
+        global $DB;
+        $page = max(0, $page);
+        $perpage = max(1, min(100, $perpage));
+        if ($page > intdiv(PHP_INT_MAX, $perpage)) {
+            return [];
+        }
+        return $DB->get_records('masteryagent_attempt', [
+            'masteryagentid' => $instance->id, 'userid' => $userid,
+        ], 'id DESC', 'id, status, lessonindex, turnsused, score, timestarted, timefinished', $page * $perpage, $perpage);
+    }
+
+    /**
      * Fetch every attempt for an activity.
      *
      * @param \stdClass $instance Activity instance record.
@@ -104,6 +162,7 @@ class attempt {
             'masteryagentid' => $instance->id,
             'userid' => $userid,
             'status' => self::STATUS_INPROGRESS,
+            'draftreply' => '',
             'turnsused' => 0,
             'lessonindex' => 0,
             'lessonscores' => json_encode([]),
@@ -178,6 +237,26 @@ class attempt {
     }
 
     /**
+     * The unsent answer saved when the learner chose to pause.
+     *
+     * @return string
+     */
+    public function draft_reply(): string {
+        return (string) ($this->record->draftreply ?? '');
+    }
+
+    /**
+     * Save a draft without adding a turn, calling AI or changing a grade.
+     *
+     * @param string $draft Unsent text, validated by the conversation service.
+     */
+    public function save_draft(string $draft): void {
+        global $DB;
+        $this->record->draftreply = $draft;
+        $DB->set_field('masteryagent_attempt', 'draftreply', $draft, ['id' => $this->record->id]);
+    }
+
+    /**
      * The running evidence ledger for the current lesson.
      *
      * @return array
@@ -211,6 +290,65 @@ class attempt {
     }
 
     /**
+     * Return saved clarification only for the most recent evaluator message in an active attempt.
+     *
+     * Every newer agent message resets the association, even if its lesson key and turn number repeat.
+     *
+     * @return \stdClass|null Saved clarification record, or null.
+     */
+    public function current_clarification(): ?\stdClass {
+        if ($this->is_finished()) {
+            return null;
+        }
+        $question = null;
+        $clarification = null;
+        foreach ($this->messages() as $message) {
+            if ($message->role === 'agent') {
+                $question = $message;
+                $clarification = null;
+            } else if ($message->role === 'clarification' && $question !== null
+                    && $message->lessonkey === $question->lessonkey && $clarification === null) {
+                $clarification = $message;
+            }
+        }
+        return $clarification;
+    }
+
+    /**
+     * Save one ungraded clarification for the current saved question, reusing it on repeated requests.
+     *
+     * The conversation service holds the learner lock and transaction while this method runs.
+     * Drafts, replies used, evidence and grades are never changed here.
+     *
+     * @param sequence $sequence Current lesson sequence.
+     * @param int $contextid Module context ID for the AI request.
+     * @return void
+     * @throws \moodle_exception When no active question exists or the provider fails.
+     */
+    public function clarify(sequence $sequence, int $contextid): void {
+        $lesson = $sequence->get($this->lesson_index());
+        if ($this->is_finished() || $lesson === null) {
+            throw new \moodle_exception('attemptnotavailable', 'mod_masteryagent');
+        }
+        $question = null;
+        foreach ($this->messages() as $message) {
+            if ($message->role === 'agent') {
+                $question = $message;
+            }
+        }
+        if ($question === null || trim((string) $question->message) === ''
+                || $question->lessonkey !== $sequence->key_for($this->lesson_index())) {
+            throw new \moodle_exception('attemptnotavailable', 'mod_masteryagent');
+        }
+        if ($this->current_clarification() !== null) {
+            return;
+        }
+        $agent = new agent($lesson, $this->instance, $contextid);
+        $text = $agent->clarify_question($question->message);
+        $this->add_message('clarification', $text, $question->lessonkey, (int) $question->turnno);
+    }
+
+    /**
      * The conversation for one lesson, in the shape the agent expects.
      *
      * @param string $lessonkey Which lesson to extract.
@@ -219,7 +357,7 @@ class attempt {
     public function transcript_for(string $lessonkey): array {
         $transcript = [];
         foreach ($this->messages() as $message) {
-            if ($message->lessonkey !== $lessonkey) {
+            if ($message->lessonkey !== $lessonkey || !in_array($message->role, ['agent', 'student'], true)) {
                 continue;
             }
             $transcript[] = ['role' => $message->role, 'message' => $message->message];
@@ -230,7 +368,7 @@ class attempt {
     /**
      * Append a message to the conversation.
      *
-     * @param string $role Either agent or student.
+     * @param string $role Agent, student, or ungraded clarification.
      * @param string $message Message body.
      * @param string $lessonkey Which lesson the message belongs to.
      * @param int|null $turnno Turn number, defaults to the current turn count.
@@ -301,6 +439,9 @@ class attempt {
 
         $this->add_message('agent', $result['reply'], $lessonkey, $this->record->turnsused);
 
+        // Only clear the draft after a successful turn; the caller rolls back failures.
+        $this->save_draft('');
+
         if ($result['ready_to_close'] || $this->turns_left() <= 0) {
             $this->close_lesson($sequence, $contextid);
         }
@@ -336,6 +477,9 @@ class attempt {
             'max' => (int) $this->instance->maxgrade,
             'summary' => $assessment['summary'],
             'dimensions' => $assessment['dimensions'],
+            // Snapshot public labels and readings so later uploads do not rewrite this feedback.
+            'dimension_names' => $lesson->dimension_names(),
+            'learning_resources' => $lesson->learning_resources(),
             'strengths' => $assessment['strengths'],
             'gaps' => $assessment['gaps'],
             'next_step' => $assessment['next_step'],
@@ -417,6 +561,7 @@ class attempt {
         }
 
         $this->record->status = self::STATUS_FINISHED;
+        $this->record->draftreply = '';
         $this->record->score = $total;
         $this->record->summary = $summary;
         $this->record->timefinished = time();

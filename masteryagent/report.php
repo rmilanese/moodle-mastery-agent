@@ -93,14 +93,7 @@ if ($attemptid) {
     }
 
     foreach ($single->messages() as $message) {
-        $label = $message->role === 'agent'
-            ? get_string('roleagent', 'mod_masteryagent')
-            : get_string('rolestudent', 'mod_masteryagent');
-        echo html_writer::div(
-            html_writer::tag('div', $label, ['class' => 'masteryagent-role'])
-            . html_writer::tag('div', nl2br(s($message->message)), ['class' => 'masteryagent-text']),
-            'masteryagent-message ' . ($message->role === 'agent' ? 'masteryagent-agent' : 'masteryagent-student')
-        );
+        echo \mod_masteryagent\output\conversation_view::render_message($message);
     }
 
     if (!empty($record->summary)) {
