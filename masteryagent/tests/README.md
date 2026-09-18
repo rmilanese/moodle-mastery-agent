@@ -1,6 +1,6 @@
 # Running the mastery agent tests
 
-86 PHPUnit tests covering the question-set parser, lesson selection, prompt
+89 PHPUnit tests covering the question-set parser, lesson selection, prompt
 construction, the conversation engine, gradebook, and AJAX endpoint. They never call a real
 AI provider — a scripted responder stands in for one — so they cost nothing to
 run and are deterministic.
@@ -36,9 +36,10 @@ vendor/bin/phpunit public/mod/masteryagent/tests/attempt_test.php
 vendor/bin/phpunit --filter test_a_sequence_advances_on_its_own
 ```
 
-The original suite contained 71 tests. The AJAX update adds 15 tests in
-`external_test.php`, for 86 tests in total. This updated PHP suite has not been
-executed in the packaging environment; run it on a development Moodle site.
+The original suite contained 71 tests. The AJAX update added 15 tests in
+`external_test.php`. The learning-plan update adds 3 tests in
+`learning_plan_test.php`, for 89 tests in total. The PHP suite has not been
+executed in this workspace; run it on a development Moodle site.
 
 ## What each file covers
 
@@ -121,3 +122,15 @@ used instead. The UI checks do not replace the Moodle/PHP suite.
 - Disable JavaScript and confirm that the POST fallback still works and rejects
   invalid session keys. AJAX session-key protection is provided by Moodle's
   authenticated `core/ajax` endpoint.
+
+## Learning-plan regression checks (0.4.1)
+
+`learning_plan_test.php` adds three tests for completed feedback, saved public
+names/readings after content replacement, historical results with missing fields,
+and escaping/unsafe reading URLs. They exercise the shared renderer and AJAX
+completion path without contacting an AI provider. These new tests have not been
+run in this Windows workspace, which has no Moodle/PHP runtime.
+
+After upgrading a test site, complete a lesson and check the three feedback
+sections, readable skill names, reading links and page references. Check an old
+completed attempt too. At a narrow viewport the feedback cards should stack.

@@ -220,49 +220,131 @@ class conversation_view {
             . (int) ($result['max'] ?? 0));
         $out .= html_writer::tag('p', nl2br(s((string) ($result['summary'] ?? ''))));
 
+        $out .= html_writer::div(
+            self::feedback_section('learningstrengths', $result['strengths'] ?? [], 'learningstrengthsempty')
+            . self::feedback_section('learninggaps', $result['gaps'] ?? [], 'learninggapsempty'),
+            'masteryagent-feedback-grid'
+        );
+
+        $nextstep = is_string($result['next_step'] ?? null) ? trim($result['next_step']) : '';
+        $out .= html_writer::div(
+            html_writer::tag('h6', get_string('learningnextstep', 'mod_masteryagent'))
+            . html_writer::tag('p', $nextstep !== '' ? nl2br(s($nextstep))
+                : get_string('learningnextstepempty', 'mod_masteryagent')),
+            'masteryagent-next-step'
+        );
+        $out .= self::render_readings($result['learning_resources'] ?? []);
+
         $verdictmap = [
             'met' => 'verdictmetshort',
             'partial' => 'verdictpartial',
             'notmet' => 'verdictnotmetshort',
         ];
+        $names = is_array($result['dimension_names'] ?? null) ? $result['dimension_names'] : [];
         $rows = '';
+        $position = 0;
         foreach ((array) ($result['dimensions'] ?? []) as $dimension) {
             if (!is_array($dimension)) {
                 continue;
             }
+            $position++;
+            $id = is_string($dimension['id'] ?? null) ? $dimension['id'] : '';
+            $name = is_string($names[$id] ?? null) ? trim($names[$id]) : '';
+            if ($name === '') {
+                // Older question sets have only internal IDs; do not invent a skill name.
+                $name = get_string('learningdimensionfallback', 'mod_masteryagent', $position);
+            }
             $raw = preg_replace('/[^a-z]/', '', strtolower((string) ($dimension['verdict'] ?? '')));
             $label = isset($verdictmap[$raw])
                 ? get_string($verdictmap[$raw], 'mod_masteryagent')
-                : s((string) ($dimension['verdict'] ?? ''));
+                : get_string('learningverdictunknown', 'mod_masteryagent');
             $rows .= html_writer::tag(
                 'tr',
-                html_writer::tag('td', s((string) ($dimension['id'] ?? '')))
+                html_writer::tag('th', s($name), ['scope' => 'row'])
                 . html_writer::tag('td', $label)
                 . html_writer::tag('td', s((string) ($dimension['comment'] ?? '')))
             );
         }
         if ($rows !== '') {
-            $out .= html_writer::tag(
+            $out .= html_writer::div(html_writer::tag(
                 'table',
-                html_writer::tag(
+                html_writer::tag('caption', get_string('learningbreakdown', 'mod_masteryagent'))
+                . html_writer::tag(
                     'thead',
                     html_writer::tag(
                         'tr',
-                        html_writer::tag('th', get_string('dimension', 'mod_masteryagent'))
-                        . html_writer::tag('th', get_string('verdict', 'mod_masteryagent'))
-                        . html_writer::tag('th', get_string('comment', 'mod_masteryagent'))
+                        html_writer::tag('th', get_string('learningskill', 'mod_masteryagent'), ['scope' => 'col'])
+                        . html_writer::tag('th', get_string('verdict', 'mod_masteryagent'), ['scope' => 'col'])
+                        . html_writer::tag('th', get_string('comment', 'mod_masteryagent'), ['scope' => 'col'])
                     )
                 ) . html_writer::tag('tbody', $rows),
                 ['class' => 'table table-sm']
-            );
+            ), 'table-responsive');
         }
 
-        if (!empty($result['next_step'])) {
-            $out .= html_writer::tag('p', html_writer::tag('strong', get_string('nextstep', 'mod_masteryagent'))
-                . ' ' . s((string) $result['next_step']));
-        }
+        return html_writer::div($out, 'masteryagent-learning-plan');
+    }
 
-        return $out;
+    /**
+     * Render learner feedback as escaped text, with an honest empty state.
+     *
+     * @param string $heading Language string for the heading.
+     * @param mixed $items Stored feedback.
+     * @param string $empty Language string when no feedback was recorded.
+     * @return string
+     */
+    private static function feedback_section(string $heading, $items, string $empty): string {
+        $list = '';
+        foreach (is_array($items) ? $items : [] as $item) {
+            if (is_string($item) && trim($item) !== '') {
+                $list .= html_writer::tag('li', s(trim($item)));
+            }
+        }
+        return html_writer::div(
+            html_writer::tag('h6', get_string($heading, 'mod_masteryagent'))
+            . ($list !== '' ? html_writer::tag('ul', $list)
+                : html_writer::tag('p', get_string($empty, 'mod_masteryagent'), ['class' => 'text-muted'])),
+            'masteryagent-feedback-section'
+        );
+    }
+
+    /**
+     * Render the reading references saved with this result.
+     *
+     * Only HTTP(S) links are allowed. References without usable URLs remain text.
+     *
+     * @param mixed $readings Stored public reading references.
+     * @return string
+     */
+    private static function render_readings($readings): string {
+        $list = '';
+        foreach (is_array($readings) ? $readings : [] as $reading) {
+            if (!is_array($reading) || !is_string($reading['title'] ?? null) || trim($reading['title']) === '') {
+                continue;
+            }
+            $title = s(trim($reading['title']));
+            $url = is_string($reading['url'] ?? null) ? trim($reading['url']) : '';
+            $scheme = strtolower((string) parse_url($url, PHP_URL_SCHEME));
+            if (filter_var($url, FILTER_VALIDATE_URL) !== false && in_array($scheme, ['http', 'https'], true)) {
+                $title = html_writer::link(new moodle_url($url), $title);
+            }
+            $details = [];
+            foreach (['edition_or_date', 'coursebook_page_or_section'] as $key) {
+                if (is_string($reading[$key] ?? null) && trim($reading[$key]) !== '') {
+                    $details[] = trim($reading[$key]);
+                }
+            }
+            $list .= html_writer::tag('li', $title
+                . ($details ? html_writer::div(s(implode(' · ', $details)), 'text-muted') : ''));
+        }
+        return html_writer::div(
+            html_writer::tag('h6', get_string('learningreadings', 'mod_masteryagent'))
+            . ($list !== ''
+                ? html_writer::tag('p', get_string('learningreadingshelp', 'mod_masteryagent'))
+                    . html_writer::tag('ul', $list)
+                : html_writer::tag('p', get_string('learningreadingsempty', 'mod_masteryagent'), ['class' => 'text-muted'])),
+            'masteryagent-readings'
+        );
     }
 
 }

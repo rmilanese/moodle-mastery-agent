@@ -336,6 +336,9 @@ class attempt {
             'max' => (int) $this->instance->maxgrade,
             'summary' => $assessment['summary'],
             'dimensions' => $assessment['dimensions'],
+            // Snapshot public labels and readings so later uploads do not rewrite this feedback.
+            'dimension_names' => $lesson->dimension_names(),
+            'learning_resources' => $lesson->learning_resources(),
             'strengths' => $assessment['strengths'],
             'gaps' => $assessment['gaps'],
             'next_step' => $assessment['next_step'],

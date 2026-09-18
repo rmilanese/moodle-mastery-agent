@@ -138,3 +138,18 @@ $string['attemptnotavailable'] = 'This action is not available for the current a
 $string['replyrequired'] = 'Enter a reply before sending it.';
 $string['replytoolong'] = 'Your reply must contain no more than {$a} characters.';
 $string['recovereddraft'] = 'Your unsent draft (copy it before starting another attempt)';
+
+// Student learning plan.
+$string['learningstrengths'] = 'What you understand';
+$string['learninggaps'] = 'What needs work';
+$string['learningnextstep'] = 'What to do next';
+$string['learningstrengthsempty'] = 'No specific strengths were recorded for this lesson.';
+$string['learninggapsempty'] = 'No specific gaps were recorded. This does not mean every learning objective was assessed.';
+$string['learningnextstepempty'] = 'Review the feedback and course readings, then explain the topic again in your own words.';
+$string['learningreadings'] = 'Course readings';
+$string['learningreadingshelp'] = 'Use these lesson references to revisit the feedback above. Page and section references are shown where available.';
+$string['learningreadingsempty'] = 'No reading references were saved with this result. Check the lesson materials in your course.';
+$string['learningbreakdown'] = 'Feedback on assessed skills';
+$string['learningskill'] = 'Assessed skill';
+$string['learningdimensionfallback'] = 'Assessed skill {$a}';
+$string['learningverdictunknown'] = 'Not recorded';
