@@ -52,6 +52,24 @@ listing their IDs, so **every record must be independently usable**.
 | `source_evidence` | array of objects | Shown to instructors in the report so they can check a judgement against the reading. Each: `source_id`, `title`, `edition_or_date`, `coursebook_page_or_section`, `url`, `verification_status`. |
 | `validation_notes` | array of strings | Shown to instructors in the report. This is where open issues and "pending SME validation" caveats belong. |
 
+### Public learning-plan metadata
+
+Add `dimension_names` to each question: an object mapping every targeted
+dimension ID to its name in the source rubric, for example
+`{"L01-MD01": "Learning, Education, and Training for Warfighting"}`.
+Keep `target_mastery_dimensions` as an array of IDs. Names are public labels;
+do not include evidence criteria, expected answers, probes or reviewer notes.
+
+The completed student results display these names and public fields from
+`source_evidence`: `title`, `edition_or_date`,
+`coursebook_page_or_section` and `url`. Supply accurate page/section references
+and a direct HTTP(S) URL when available; leave the URL empty for printed or
+embedded readings. Do not invent a link or a gap-to-passage association.
+
+Both fields are saved with the scored lesson. Older files remain supported:
+missing names use numbered skill labels, and missing readings show a clear
+empty state. Evaluator notes and evidence guides stay private.
+
 ### Carried but not currently displayed
 
 `target_educational_objectives`, `lesson_number`, `estimated_response_minutes`,

@@ -3,9 +3,75 @@
 }
 
 .masteryagent-message {
+    overflow-wrap: anywhere;
     border-radius: 0.5rem;
     margin-bottom: 0.75rem;
     padding: 0.75rem 1rem;
+}
+
+.masteryagent-navigation {
+    border: 1px solid #d6d9dc;
+    border-radius: 0.5rem;
+    padding: 0.75rem 1rem;
+    margin-bottom: 1rem;
+    overflow-wrap: anywhere;
+}
+
+.masteryagent-shortcuts,
+.masteryagent-lesson-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem 1.25rem;
+}
+
+.masteryagent-lesson-links {
+    padding-inline-start: 1.25rem;
+    margin-bottom: 0;
+}
+
+.masteryagent-navigation a,
+.masteryagent-history summary {
+    display: inline-block;
+    padding: 0.65rem 0;
+}
+
+.masteryagent-history {
+    border-bottom: 1px solid #d6d9dc;
+    margin-bottom: 1rem;
+}
+
+.masteryagent-history summary {
+    display: list-item;
+    cursor: pointer;
+    font-weight: 600;
+    overflow-wrap: anywhere;
+}
+
+.masteryagent-export :focus-visible,
+.masteryagent-app :focus-visible,
+.masteryagent-attempt-history :focus-visible,
+.masteryagent-history-entry :focus-visible,
+.masteryagent-question-clarification h3:focus,
+.masteryagent-message:focus,
+.masteryagent-app [data-region="current-lesson"] h3:focus {
+    outline: 3px solid #0f6cbf;
+    outline-offset: 3px;
+}
+
+.masteryagent-app [data-region="current-lesson"] {
+    overflow-wrap: anywhere;
+}
+
+.masteryagent-sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
 }
 
 .masteryagent-message.masteryagent-agent {
@@ -16,6 +82,32 @@
 .masteryagent-message.masteryagent-student {
     background-color: #eef5fb;
     border-left: 3px solid #0f6cbf;
+}
+
+.masteryagent-message.masteryagent-clarification {
+    background-color: #f4f7f4;
+    border-left: 3px solid #5f6b61;
+}
+
+.masteryagent-question-clarification {
+    border: 1px solid #d6d9dc;
+    border-inline-start: 4px solid #5f6b61;
+    border-radius: 0.5rem;
+    padding: 1rem;
+    margin-bottom: 1rem;
+    overflow-wrap: anywhere;
+}
+
+.masteryagent-question-clarification h3 {
+    font-size: 1.25rem;
+}
+
+.masteryagent-clarification-text {
+    line-height: 1.5;
+}
+
+#masteryagent-clarify-question {
+    white-space: normal;
 }
 
 .masteryagent-role {
@@ -34,9 +126,127 @@
     width: 100%;
 }
 
+.masteryagent-form .masteryagent-reply-editor {
+    box-sizing: border-box;
+    resize: vertical;
+}
+
+.masteryagent-reply-guidance,
+.masteryagent-reply-counter {
+    overflow-wrap: anywhere;
+}
+
+.masteryagent-reply-counter {
+    margin: 0.5rem 0;
+    font-variant-numeric: tabular-nums;
+}
+
+.masteryagent-reply-counter[data-limit-state="near"],
+.masteryagent-reply-counter[data-limit-state="reached"],
+.masteryagent-reply-counter[data-limit-state="over"] {
+    font-weight: 600;
+}
+
+.masteryagent-resume-summary {
+    border: 1px solid #d6d9dc;
+    border-inline-start: 4px solid #0f6cbf;
+    border-radius: 0.5rem;
+    padding: 1rem;
+    margin-bottom: 1rem;
+    overflow-wrap: anywhere;
+}
+
+.masteryagent-resume-summary .btn {
+    white-space: normal;
+}
+
+.masteryagent-announcement-settings {
+    margin-bottom: 1rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid #d6d9dc;
+    overflow-wrap: anywhere;
+}
+
+.masteryagent-announcement-settings select {
+    width: 100%;
+    max-width: 24rem;
+    margin-bottom: 0.5rem;
+}
+
+.masteryagent-reply-context {
+    border: 1px solid #d6d9dc;
+    border-inline-start: 4px solid #0f6cbf;
+    border-radius: 0.5rem;
+    padding: 1rem;
+    margin-bottom: 1rem;
+    overflow-wrap: anywhere;
+}
+
+.masteryagent-reply-context h3 {
+    font-size: 1.25rem;
+}
+
+.masteryagent-context-text {
+    line-height: 1.5;
+}
+
+.masteryagent-overview li + li {
+    margin-top: 0.5rem;
+}
+
+.masteryagent-overview {
+    overflow-wrap: anywhere;
+}
+
+.masteryagent-original-scenario {
+    margin-top: 0.75rem;
+}
+
+.masteryagent-original-scenario summary {
+    cursor: pointer;
+    font-weight: 600;
+    padding: 0.65rem 0;
+}
+
+.masteryagent-original-scenario[open] summary {
+    margin-bottom: 0.5rem;
+}
+
+.masteryagent-reply-context a[data-conversation-jump] {
+    display: inline-block;
+    padding: 0.65rem 0;
+}
+
 .masteryagent-status {
     min-height: 1.5em;
     margin-bottom: 0.5rem;
+}
+
+.masteryagent-request-feedback {
+    margin-top: 0.75rem;
+    overflow-wrap: anywhere;
+}
+
+.masteryagent-request-feedback[data-state="waiting"] {
+    border-inline-start: 4px solid #0f6cbf;
+    padding: 0.5rem 0.75rem;
+}
+
+.masteryagent-request-feedback .masteryagent-status {
+    min-height: 0;
+}
+
+.masteryagent-request-feedback[data-state="waiting"] .masteryagent-status {
+    font-weight: 600;
+}
+
+.masteryagent-request-feedback [data-region="request-help"] {
+    line-height: 1.5;
+    margin: 0.5rem 0;
+}
+
+.masteryagent-request-feedback .masteryagent-status:empty {
+    display: none;
 }
 
 .masteryagent-app [aria-busy="true"] {
@@ -45,4 +255,218 @@
 
 .masteryagent-app [aria-busy="true"] textarea {
     opacity: 0.75;
+}
+
+.masteryagent-attempt-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+}
+
+.masteryagent-attempt-history,
+.masteryagent-history-entry {
+    overflow-wrap: anywhere;
+}
+
+.masteryagent-attempt-history .btn,
+.masteryagent-history-entry .btn {
+    white-space: normal;
+}
+
+.masteryagent-attempt-list {
+    list-style: none;
+    padding: 0;
+}
+
+.masteryagent-attempt-card {
+    border: 1px solid #d6d9dc;
+    border-radius: 0.5rem;
+    padding: 1rem;
+    margin-bottom: 1rem;
+}
+
+.masteryagent-attempt-meta {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.5rem 1.5rem;
+}
+
+.masteryagent-attempt-meta dd {
+    margin-inline-start: 0;
+    margin-bottom: 0;
+}
+
+.masteryagent-finish-confirmation {
+    border-top: 1px solid #d6d9dc;
+    padding-top: 1rem;
+}
+
+.masteryagent-finish-confirmation summary {
+    cursor: pointer;
+    font-weight: 600;
+}
+
+.masteryagent-feedback-grid {
+    display: grid;
+    gap: 1rem;
+    margin: 1rem 0;
+}
+
+.masteryagent-feedback-section,
+.masteryagent-next-step,
+.masteryagent-readings {
+    border: 1px solid #d6d9dc;
+    border-radius: 0.5rem;
+    padding: 1rem;
+    overflow-wrap: anywhere;
+}
+
+.masteryagent-next-step,
+.masteryagent-readings {
+    margin-bottom: 1rem;
+}
+
+.masteryagent-learning-plan ul {
+    padding-inline-start: 1.25rem;
+    margin-bottom: 0;
+}
+
+.masteryagent-learning-plan li + li {
+    margin-top: 0.5rem;
+}
+
+.masteryagent-learning-plan {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.masteryagent-learning-plan .masteryagent-skill-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
+    gap: 1rem;
+    list-style: none;
+    padding: 0;
+    margin: 0 0 1rem;
+}
+
+.masteryagent-skill-cards > .masteryagent-skill-card {
+    box-sizing: border-box;
+    min-width: 0;
+    border: 1px solid #d6d9dc;
+    border-radius: 0.5rem;
+    padding: 1rem;
+    margin: 0;
+    overflow-wrap: anywhere;
+}
+
+.masteryagent-skill-card h6 {
+    font-size: 1em;
+    font-weight: 600;
+    line-height: 1.5;
+    margin: 0 0 0.75rem;
+}
+
+.masteryagent-skill-card dl {
+    min-width: 0;
+    margin: 0;
+}
+
+.masteryagent-skill-card dt {
+    font-weight: 600;
+}
+
+.masteryagent-skill-card dd {
+    margin: 0;
+    line-height: 1.5;
+}
+
+.masteryagent-skill-card dd + dt {
+    margin-top: 0.75rem;
+}
+
+.masteryagent-export {
+    max-width: 70rem;
+    margin: 0 auto;
+    overflow-wrap: anywhere;
+}
+
+.masteryagent-export-controls {
+    margin-bottom: 1.5rem;
+}
+
+.masteryagent-export-controls > p {
+    margin-top: 0.75rem;
+}
+
+.masteryagent-export-controls summary {
+    cursor: pointer;
+    padding: 0.75rem 0;
+    font-weight: 600;
+}
+
+.masteryagent-export-controls textarea {
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 100%;
+    min-height: 16rem;
+    font: inherit;
+    line-height: 1.5;
+}
+
+.masteryagent-export [hidden] {
+    display: none !important;
+}
+
+@media print {
+    body.masteryagent-print-page #page-header,
+    body.masteryagent-print-page #page-footer,
+    body.masteryagent-print-page nav,
+    body.masteryagent-print-page .activity-header,
+    body.masteryagent-print-page .masteryagent-export-controls {
+        display: none !important;
+    }
+
+    body.masteryagent-print-page,
+    body.masteryagent-print-page #page,
+    body.masteryagent-print-page #page-content,
+    body.masteryagent-print-page #region-main {
+        height: auto !important;
+        overflow: visible !important;
+        background: white !important;
+        color: black !important;
+    }
+
+    .masteryagent-print-page .masteryagent-export {
+        max-width: none;
+        margin: 0;
+    }
+
+    .masteryagent-print-page .masteryagent-export-document .masteryagent-feedback-grid,
+    .masteryagent-print-page .masteryagent-export-document .masteryagent-skill-cards {
+        display: block;
+    }
+
+    .masteryagent-print-page .masteryagent-skill-card {
+        margin-bottom: 1rem;
+        break-inside: avoid;
+    }
+
+    .masteryagent-print-page .masteryagent-export-document :is(h2, h3, h4, h5, h6) {
+        break-after: avoid;
+    }
+
+    .masteryagent-print-page .masteryagent-export-document a[href]::after {
+        content: " (" attr(href) ")";
+        overflow-wrap: anywhere;
+    }
+}
+
+@media (min-width: 48rem) {
+    .masteryagent-attempt-meta {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .masteryagent-feedback-grid {
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    }
 }
