@@ -26,7 +26,7 @@ defined('MOODLE_INTERNAL') || die();
 $functions = [
     'mod_masteryagent_update_conversation' => [
         'classname' => 'mod_masteryagent\external\update_conversation',
-        'description' => 'Start, reply to, or finish the current learner\'s mastery assessment.',
+        'description' => 'Start, reply to, clarify a question in, pause, or finish the current learner\'s mastery assessment.',
         'type' => 'write',
         'ajax' => true,
         'loginrequired' => true,

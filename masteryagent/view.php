@@ -51,12 +51,15 @@ $completion->set_module_viewed($cm);
 $canattempt = has_capability('mod/masteryagent:attempt', $context);
 $canreport = has_capability('mod/masteryagent:viewreports', $context);
 $error = null;
+$historylink = $canattempt || attempt::count_for_user($instance, (int) $USER->id) > 0
+    ? \mod_masteryagent\output\history_view::activity_link($cm) : '';
 
 $sequence = sequence::from_instance($instance);
 
 if ($sequence->count() === 0) {
     echo $OUTPUT->header();
     echo $OUTPUT->heading(format_string($instance->name));
+    echo $historylink;
     echo $OUTPUT->notification(get_string('nolessonloaded', 'mod_masteryagent'), 'error');
     echo $OUTPUT->footer();
     exit;
@@ -66,19 +69,28 @@ $current = attempt::get_latest($instance, (int) $USER->id);
 
 // AJAX intercepts these forms when JavaScript is available. Keep a safe POST fallback.
 $draft = '';
+$draftoverride = null;
+$stale = false;
 if ($action !== '' && data_submitted()) {
     require_sesskey();
     $draft = optional_param('reply', '', PARAM_RAW);
+    $draftoverride = $draft;
     try {
         $result = \mod_masteryagent\conversation::process(
-            $instance, $context, $action, required_param('state', PARAM_ALPHANUM), $draft
+            $instance, $context, $action, required_param('state', PARAM_ALPHANUM), $draft,
+            optional_param('confirmed', false, PARAM_BOOL)
         );
         $current = $result['attempt'];
         if ($result['stale']) {
+            $stale = true;
             $error = get_string('conversationchanged', 'mod_masteryagent');
-        } else {
+        } else if ($action === 'pause') {
+            redirect(new moodle_url('/course/view.php', ['id' => $course->id]),
+                get_string('pausesaved', 'mod_masteryagent'));
+        } else if ($action !== 'clarify') {
             redirect(new moodle_url('/mod/masteryagent/view.php', ['id' => $cm->id]));
         }
+        // Clarification renders this POST directly so even an explicitly cleared draft stays unchanged.
     } catch (moodle_exception $e) {
         $current = attempt::get_latest($instance, (int) $USER->id);
         $error = $e->getMessage();
@@ -91,6 +103,7 @@ if ($canattempt) {
 
 echo $OUTPUT->header();
 echo $OUTPUT->heading(format_string($instance->name));
+echo $historylink;
 
 if (!empty($instance->intro)) {
     echo $OUTPUT->box(format_module_intro('masteryagent', $instance, $cm->id), 'generalbox', 'intro');
@@ -129,19 +142,50 @@ if (!$canattempt) {
     exit;
 }
 
-// Status and error regions stay mounted while only the conversation fragment changes.
+// Live announcements stay outside the fragment; request feedback moves into each new action slot.
 echo html_writer::start_div('masteryagent-app', [
     'id' => 'masteryagent-app',
     'data-cmid' => $cm->id,
     'data-processing' => get_string('processing', 'mod_masteryagent'),
+    'data-processing-start' => get_string('requeststarting', 'mod_masteryagent'),
+    'data-processing-reply' => get_string('requestreplypending', 'mod_masteryagent'),
+    'data-processing-finish' => get_string('requestfinishing', 'mod_masteryagent'),
+    'data-processing-pause' => get_string('requestpausing', 'mod_masteryagent'),
+    'data-processing-clarify' => get_string('processingclarify', 'mod_masteryagent'),
+    'data-processing-slow' => get_string('requestslow', 'mod_masteryagent'),
+    'data-recovery-reply' => get_string('requestreplyrecovery', 'mod_masteryagent'),
+    'data-recovery-action' => get_string('requestactionrecovery', 'mod_masteryagent'),
+    'data-recovery-stale' => get_string('requeststalerecovery', 'mod_masteryagent'),
+    'data-recovery-draft' => get_string('requestdraftrecovery', 'mod_masteryagent'),
+    'data-recovery-clarify' => get_string('recoveryclarify', 'mod_masteryagent'),
     'data-updated' => get_string('conversationupdated', 'mod_masteryagent'),
     'data-error' => get_string('ajaxerror', 'mod_masteryagent'),
+    'data-unsent' => get_string('finishunsent', 'mod_masteryagent'),
+    'data-confirmrequired' => get_string('finishconfirmationrequired', 'mod_masteryagent'),
+    'data-resultsready' => get_string('assessmentresultsready', 'mod_masteryagent'),
+    'data-newfeedback' => get_string('newfeedbackavailable', 'mod_masteryagent'),
+    'data-clarificationready' => get_string('clarificationready', 'mod_masteryagent'),
 ]);
-echo html_writer::div($error === null ? '' : s($error), 'alert alert-danger', [
-    'data-region' => 'error', 'role' => 'alert', 'tabindex' => '-1',
-] + ($error === null ? ['hidden' => 'hidden'] : []));
-echo html_writer::div('', 'masteryagent-status text-muted', [
-    'data-region' => 'status', 'role' => 'status', 'aria-live' => 'polite',
+echo html_writer::div(
+    html_writer::tag('label', get_string('announcementsettings', 'mod_masteryagent'), [
+        'for' => 'masteryagent-announcement-mode',
+    ])
+    . html_writer::tag('select',
+        html_writer::tag('option', get_string('announcementbrief', 'mod_masteryagent'), ['value' => 'brief'])
+        . html_writer::tag('option', get_string('announcementfull', 'mod_masteryagent'), ['value' => 'full']), [
+            'id' => 'masteryagent-announcement-mode', 'data-region' => 'announcement-mode',
+            'class' => 'form-control', 'aria-describedby' => 'masteryagent-announcement-help',
+        ])
+    . html_writer::tag('p', get_string('announcementhelp', 'mod_masteryagent'), [
+        'id' => 'masteryagent-announcement-help', 'class' => 'text-muted mb-0',
+    ]),
+    'masteryagent-announcement-settings', ['data-region' => 'announcement-settings', 'hidden' => 'hidden']
+);
+echo html_writer::div('', 'masteryagent-sr-only', [
+    'data-region' => 'announcements', 'role' => 'status', 'aria-live' => 'polite', 'aria-atomic' => 'true',
+]);
+echo html_writer::div('', 'masteryagent-sr-only', [
+    'data-region' => 'reply-limit-announcement', 'role' => 'status', 'aria-live' => 'polite', 'aria-atomic' => 'true',
 ]);
 $showdraft = $draft !== '' && ($current === null || $current->is_finished());
 echo html_writer::div(
@@ -151,11 +195,27 @@ echo html_writer::div(
     ]),
     'mb-3', ['data-region' => 'draft'] + ($showdraft ? [] : ['hidden' => 'hidden'])
 );
-$html = \mod_masteryagent\output\conversation_view::render($instance, $cm, $sequence, $current);
-if ($draft !== '') {
-    // Preserve the learner's text on an unsuccessful non-JavaScript submission.
-    $html = str_replace('</textarea>', s($draft) . '</textarea>', $html);
+$showresume = $action === '' && $current !== null && !$current->is_finished();
+$recoveryhelp = '';
+if ($error !== null) {
+    if ($stale) {
+        $recoveryhelp = get_string('requeststalerecovery', 'mod_masteryagent');
+        if ($showdraft) {
+            $recoveryhelp .= ' ' . get_string('requestdraftrecovery', 'mod_masteryagent');
+        }
+    } else if ($showdraft) {
+        $recoveryhelp = get_string('requestdraftrecovery', 'mod_masteryagent');
+    } else if ($action === 'clarify' && $current !== null && !$current->is_finished()) {
+        $recoveryhelp = get_string('recoveryclarify', 'mod_masteryagent');
+    } else {
+        $replydraft = $current !== null && !$current->is_finished() ? ($draftoverride ?? $current->draft_reply()) : '';
+        $recoveryhelp = get_string($action === 'reply' && $replydraft !== '' ? 'requestreplyrecovery' : 'requestactionrecovery',
+            'mod_masteryagent');
+    }
 }
+$feedback = \mod_masteryagent\output\conversation_view::request_feedback($error, $recoveryhelp);
+$html = \mod_masteryagent\output\conversation_view::render($instance, $cm, $sequence, $current,
+    $draftoverride, $showresume, $feedback);
 echo html_writer::div($html, '', ['data-region' => 'content', 'aria-busy' => 'false']);
 echo html_writer::end_div();
 echo $OUTPUT->footer();
