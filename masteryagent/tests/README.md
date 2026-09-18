@@ -1,6 +1,6 @@
 # Running the mastery agent tests
 
-86 PHPUnit tests covering the question-set parser, lesson selection, prompt
+109 PHPUnit tests covering the question-set parser, lesson selection, prompt
 construction, the conversation engine, gradebook, and AJAX endpoint. They never call a real
 AI provider — a scripted responder stands in for one — so they cost nothing to
 run and are deterministic.
@@ -36,9 +36,14 @@ vendor/bin/phpunit public/mod/masteryagent/tests/attempt_test.php
 vendor/bin/phpunit --filter test_a_sequence_advances_on_its_own
 ```
 
-The original suite contained 71 tests. The AJAX update adds 15 tests in
-`external_test.php`, for 86 tests in total. This updated PHP suite has not been
-executed in the packaging environment; run it on a development Moodle site.
+The original suite contained 71 tests. The AJAX update added 15 tests in
+`external_test.php`. The learning-plan update adds 3 tests in
+`learning_plan_test.php`. Pausing and final submission add 6 more tests in
+`external_test.php`. Conversation navigation adds 4 tests in
+`conversation_view_test.php`, and the student overview/reply-context update adds 6 more in that file,
+with 4 further tests for the welcome summary and editor markup in 0.4.5,
+for 109 tests in total. The PHP suite has not been
+executed in this workspace; run it on a development Moodle site.
 
 ## What each file covers
 
@@ -49,6 +54,7 @@ executed in the packaging environment; run it on a development Moodle site.
 | `agent_test.php` | Prompt contents, scoring bands across scale widths, corrected-misconception handling, JSON parsing (fenced, prose-wrapped, malformed), score clamping, course summary |
 | `attempt_test.php` | Turns, budget exhaustion, automatic lesson advance, totals, early finish, provider failure recovery |
 | `external_test.php` | Authenticated AJAX access, ownership and hidden activities, duplicate/stale requests, progression, grades, retry settings, input limits, escaped output and atomic provider/scoring failures |
+| `conversation_view_test.php` | Lesson grouping, message order, navigation targets, finished history, legacy keys, escaped saved titles, overview settings, saved reply context, welcome summaries and editor guidance |
 | `lib_test.php` | Settings form save paths, file upload and re-upload, gradebook item and grade writing, deletion cleanup |
 
 ## After you change something
@@ -91,22 +97,30 @@ rather than against any real question set.
 
 ## Browser regression checks
 
-`browser/runner.html` runs 11 DOM-level regression scenarios against the shipped
+`browser/runner.html` runs 48 DOM-level regression scenarios against the shipped
 AMD bundle, with mocked `core/ajax` and filter-event modules. Serve the plugin
 directory locally, then open `tests/browser/runner.html`. The runner contains
 only synthetic test data and never contacts an AI provider or Moodle server.
-All 11 scenarios passed in a browser during packaging.
+All 48 scenarios passed in headless Microsoft Edge during 0.4.5 packaging.
+They cover reply, pause, confirmation, draft recovery, browser history, conversation
+navigation, preserved reading focus, new-message announcements and narrow text wrapping.
+The 11 scenarios added in 0.4.4 cover focus visibility after long replies, announcement
+preferences and unavailable storage, external focus, original-scenario expansion,
+and avoiding duplicate prompt announcements. The 11 scenarios added in 0.4.5
+cover draft/editor sizing, narrow widths, character counts and sparse limit
+warnings, error/stale recovery, manual resizing, browser history and the welcome
+shortcut. Layout fixtures use the production form classes.
 
-An equivalent standalone Playwright suite is also included. With Node.js,
+A standalone Playwright suite for the original 17 scenarios is also included. With Node.js,
 Playwright, and its Chromium browser available, run:
 
 ```bash
 node --test tests/browser/conversation.test.cjs
 ```
 
-Set `CHROME_PATH` if using an existing Chrome executable. The Playwright suite
-could not launch Chrome in the packaging sandbox; the in-browser runner was
-used instead. The UI checks do not replace the Moodle/PHP suite.
+Set `CHROME_PATH` if using an existing Chromium browser executable. The standalone
+Playwright suite was not run for 0.4.5; the in-browser runner was used instead.
+The UI checks do not replace the Moodle/PHP suite.
 
 ## Integration checks on a Moodle test site
 
@@ -121,3 +135,110 @@ used instead. The UI checks do not replace the Moodle/PHP suite.
 - Disable JavaScript and confirm that the POST fallback still works and rejects
   invalid session keys. AJAX session-key protection is provided by Moodle's
   authenticated `core/ajax` endpoint.
+
+## Learning-plan regression checks (0.4.1)
+
+`learning_plan_test.php` adds three tests for completed feedback, saved public
+names/readings after content replacement, historical results with missing fields,
+and escaping/unsafe reading URLs. They exercise the shared renderer and AJAX
+completion path without contacting an AI provider. These new tests have not been
+run in this Windows workspace, which has no Moodle/PHP runtime.
+
+After upgrading a test site, complete a lesson and check the three feedback
+sections, readable skill names, reading links and page references. Check an old
+completed attempt too. At a narrow viewport the feedback cards should stack.
+
+## Pause and final-submission checks (0.4.2)
+
+The six additional PHP tests cover pause/resume with no AI calls, turns or grade;
+stale and overlong draft rejection; explicit final confirmation; blocking unsent
+text; saved drafts surviving AI failures; and confirmation counts/POST rendering.
+These tests have not run here because the workspace has no Moodle/PHP runtime.
+
+On a Moodle test site, check both fresh installation and upgrade from 0.4.1.
+Pause with a partially written answer, return from the course, and verify the
+exact draft and remaining replies. Repeat with JavaScript disabled. Confirm an
+empty reply can be paused, and an unsent reply blocks final submission. Check
+the final grade after deliberately ending a partially completed sequence. Use
+two tabs to verify an old pause cannot overwrite a newer draft. A failed normal
+POST must retain the edited draft once, including an explicitly cleared box.
+
+
+## Conversation navigation checks (0.4.3)
+
+The four PHP tests exercise the real renderer and saved messages. They check
+collapsed history and the current lesson, matching and unique navigation targets,
+visible final results, message ordering with missing/repeated lesson keys, and
+escaped historical titles. They have not run in this workspace because Moodle
+and PHP are unavailable.
+
+Before the demo, validate in your Moodle theme:
+
+- Use Tab and Shift+Tab to reach lesson links and disclosure summaries, then
+  Enter/Space to open and close history. Follow the latest-message and reply
+  links; focus must reach visible content with no keyboard trap.
+- While an AI reply is pending, open an earlier lesson and focus its message.
+  After the response arrives, verify that it stays open and your position remains.
+- With NVDA/Firefox or VoiceOver/Safari, verify that the initial transcript is
+  not announced as a live update, new evaluator messages are announced once,
+  and errors and final results are discoverable. Check a lesson transition too.
+- Test at 200% and 400% zoom and a narrow viewport with long replies and titles.
+  Controls and text should wrap without a separate transcript scroll area.
+- Disable JavaScript, reopen the activity, expand earlier lessons and follow
+  the lesson/reply links. Submit a reply and pause using the native forms.
+
+These checks follow the
+[Moodle accessibility checklist](https://moodledev.io/general/development/process/peer-review/accessibility-checklist).
+The automated DOM checks do not certify assistive-technology behavior.
+
+
+## Student orientation and reply context checks (0.4.4)
+
+On a Moodle test site, check the overview with one and several lessons, retries
+enabled and disabled, and provisional assessments enabled and disabled. The
+displayed reply budget, scoring and retry policy must match the activity.
+
+Begin an attempt, send an answer, then expand **Review original scenario** beside
+the reply field. It should show the opening question from that lesson's transcript,
+remain open across another reply in the same lesson, and reset for a new lesson.
+The context should display learner-visible message text only. Repeat with
+JavaScript disabled to check the native disclosure and forms.
+
+With keyboard navigation, submit a reply whose feedback is long enough to move
+the form. Focus must stay visible in the reply field when the update completes.
+While another reply is pending, move to earlier history, the announcement
+preference, or a course navigation link; success must respect that focus choice.
+
+With NVDA/Firefox or VoiceOver/Safari, test both announcement modes. Brief mode
+should announce availability, while full mode should read only new evaluator
+messages, without reading the repeated prompt beside the editor a second time.
+Changing the setting must not replay previous messages. Confirm errors and
+assessment completion are still announced. Reload the tab to check that the
+setting is restored where session storage is available.
+
+Test the overview, preference selector, reply context, and scenario disclosure at
+a narrow viewport and 200-400% zoom in the installed Moodle theme. Browser DOM
+tests cannot establish actual screen-reader behavior or full Moodle compatibility.
+
+
+## Returning students and editor checks (0.4.5)
+
+On a Moodle test site, pause with an unsent answer and reopen the activity.
+Check that the welcome summary reflects the current lesson, completed count,
+remaining replies and saved-draft status. **Continue where I left off** should
+focus the restored answer without submitting it. Check an unfinished attempt
+without a saved draft and a completed attempt too. The welcome summary must not
+reappear after each AJAX reply.
+
+Type and paste a long multiline answer, delete part of it, and resize the browser.
+The textarea should fit the content, keep its text and caret, and show the
+remaining character count. Submit a reply and verify that the fresh editor resets.
+Simulate a failed request and a stale tab response; preserved drafts should keep
+the correct counter and height. Use browser Back after pausing to check recovery.
+
+With a screen reader, approach and reach the character limit. Warnings should be
+sparse, with no count read on every keystroke and no draft warning on initial load.
+Check that the field's guidance and limit are available through its description.
+Repeat at high zoom and in a narrow viewport using the installed Moodle theme.
+With JavaScript disabled, the static guidance, limit, jump link and native forms
+must still work. These checks do not replace the automated Moodle/PHP suite.
