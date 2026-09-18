@@ -227,6 +227,20 @@ def check_record(report: Report, index: int, record, seen: dict) -> None:
     elif not dimensions:
         report.error(where, "target_mastery_dimensions is empty — there will be no per-dimension feedback")
 
+    names = record.get("dimension_names")
+    if names is not None:
+        if not isinstance(names, dict):
+            report.error(where, "dimension_names must be an object mapping dimension IDs to display names")
+        else:
+            for dimension_id, name in names.items():
+                if not isinstance(name, str) or not name.strip():
+                    report.error(where, f"dimension_names.{dimension_id} must be a nonempty string")
+                if dimensions is not None and dimension_id not in dimensions:
+                    report.warn(where, f"dimension_names.{dimension_id} is not a targeted dimension")
+            for dimension_id in dimensions or []:
+                if dimension_id not in names:
+                    report.warn(where, f"dimension_names has no display name for {dimension_id}")
+
     probes = string_list(record.get("follow_up_probes"))
     if probes is None:
         if "follow_up_probes" in record:

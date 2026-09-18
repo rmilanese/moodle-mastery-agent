@@ -36,11 +36,219 @@ export const init = selector => {
     root.dataset.initialized = 'true';
     const content = root.querySelector('[data-region="content"]');
     const status = root.querySelector('[data-region="status"]');
+    const announcements = root.querySelector('[data-region="announcements"]');
+    const announcementMode = root.querySelector('[data-region="announcement-mode"]');
+    const limitAnnouncement = root.querySelector('[data-region="reply-limit-announcement"]');
     const error = root.querySelector('[data-region="error"]');
     const recoveredDraft = root.querySelector('[data-region="draft"]');
+    const requestFeedback = root.querySelector('[data-region="request-feedback"]');
+    const requestHelp = root.querySelector('[data-region="request-help"]');
     let busy = false;
+    let slowTimer = null;
+    let waitSerial = 0;
+    let responseSerial = 0;
+    const editorState = new WeakMap();
 
-    const setBusy = value => {
+    const clearSlowTimer = () => {
+        waitSerial++;
+        if (slowTimer !== null) {
+            window.clearTimeout(slowTimer);
+            slowTimer = null;
+        }
+    };
+
+    const attachRequestFeedback = () => {
+        if (!requestFeedback) {
+            return;
+        }
+        const slot = content.querySelector('[data-region="request-feedback-slot"]');
+        if (slot) {
+            if (requestFeedback.parentElement !== slot) {
+                slot.append(requestFeedback);
+            }
+        } else if (requestFeedback.parentElement !== root) {
+            // Older fragments and results without controls still need visible recovery instructions.
+            root.insertBefore(requestFeedback, content);
+        }
+    };
+
+    const setRequestHelp = message => {
+        if (requestHelp) {
+            requestHelp.textContent = message || '';
+            requestHelp.hidden = !message;
+        }
+    };
+
+    const processingMessage = action => root.dataset[`processing${action.charAt(0).toUpperCase()}${action.slice(1)}`]
+        || root.dataset.processing;
+
+    attachRequestFeedback();
+
+    const updateReplyEditor = (announceLimit = false) => {
+        if (!root.isConnected) {
+            return;
+        }
+        const editor = content.querySelector('textarea[name="reply"]');
+        const counter = content.querySelector('[data-region="reply-counter"]');
+        if (!editor) {
+            if (limitAnnouncement) {
+                limitAnnouncement.textContent = '';
+            }
+            return;
+        }
+        const bounds = editor.getBoundingClientRect();
+        let state = editorState.get(editor);
+        if (!state) {
+            state = {initialHeight: bounds.height, minimumHeight: bounds.height, height: bounds.height, phase: null};
+            editorState.set(editor, state);
+            if (limitAnnouncement) {
+                limitAnnouncement.textContent = '';
+            }
+        } else if (Math.abs(bounds.height - state.height) > 1) {
+            // Keep a learner's manual vertical resize, while retaining the original rows as a minimum.
+            state.minimumHeight = Math.max(state.initialHeight, bounds.height);
+        }
+        if (bounds.width > 0) {
+            const style = window.getComputedStyle(editor);
+            const border = parseFloat(style.borderTopWidth) + parseFloat(style.borderBottomWidth);
+            const padding = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom);
+            // Measure outside the document flow so growing and shrinking never collapse the visible field.
+            const measurement = editor.cloneNode(false);
+            measurement.removeAttribute('id');
+            measurement.removeAttribute('name');
+            measurement.removeAttribute('aria-describedby');
+            measurement.removeAttribute('required');
+            measurement.setAttribute('aria-hidden', 'true');
+            measurement.tabIndex = -1;
+            measurement.disabled = true;
+            measurement.value = editor.value;
+            Object.assign(measurement.style, {
+                position: 'absolute', visibility: 'hidden', pointerEvents: 'none', top: '0', left: '0',
+                boxSizing: 'border-box', width: `${bounds.width}px`, minWidth: '0', maxWidth: 'none',
+                height: '0', minHeight: '0', maxHeight: 'none', overflow: 'hidden',
+            });
+            editor.after(measurement);
+            const height = Math.max(state.minimumHeight, measurement.scrollHeight + border);
+            measurement.remove();
+            // A native scrollbar would narrow the text and wrap extra lines beyond the measured height.
+            // The fitted editor uses the page's scroll area; without JavaScript the native scrollbar remains.
+            editor.style.overflowY = 'hidden';
+            editor.style.height = `${height - (style.boxSizing === 'border-box' ? 0 : padding + border)}px`;
+            state.height = editor.getBoundingClientRect().height;
+        }
+        if (!counter || editor.maxLength < 0) {
+            return;
+        }
+        // Match the browser's maxlength accounting, including UTF-16 surrogate pairs.
+        const remaining = editor.maxLength - editor.value.length;
+        const remainingText = counter.dataset.remaining.replace('{remaining}', String(Math.max(0, remaining)));
+        const phase = remaining < 0 ? 'over' : remaining === 0 ? 'reached' : remaining <= 200 ? 'near' : 'normal';
+        const warning = phase === 'over' ? counter.dataset.overlimit : phase === 'reached' ? counter.dataset.limitreached
+            : phase === 'near' ? `${counter.dataset.nearlimit} ${remainingText}` : '';
+        counter.textContent = phase === 'over' ? counter.dataset.overlimit : remainingText;
+        counter.dataset.limitState = phase;
+        counter.hidden = false;
+        editor.setCustomValidity(remaining < 0 ? counter.dataset.overlimit : '');
+        if (limitAnnouncement && phase !== state.phase) {
+            limitAnnouncement.textContent = announceLimit ? warning : '';
+        }
+        state.phase = phase;
+    };
+
+    updateReplyEditor();
+    root.addEventListener('input', event => {
+        if (event.target.matches('textarea[name="reply"]') && content.contains(event.target)) {
+            updateReplyEditor(true);
+        }
+    });
+    root.addEventListener('pointerup', event => {
+        if (event.target.matches('textarea[name="reply"]') && content.contains(event.target)) {
+            updateReplyEditor();
+        }
+    });
+    window.addEventListener('resize', () => updateReplyEditor());
+
+    if (announcementMode) {
+        const preferenceKey = 'masteryagent-announcement-mode';
+        try {
+            const savedMode = window.sessionStorage.getItem(preferenceKey);
+            if (savedMode === 'brief' || savedMode === 'full') {
+                announcementMode.value = savedMode;
+            }
+        } catch (exception) {
+            // Storage can be unavailable; the choice still works for this page.
+        }
+        announcementMode.addEventListener('change', () => {
+            try {
+                window.sessionStorage.setItem(preferenceKey, announcementMode.value);
+            } catch (exception) {
+                // A blocked storage policy must not interrupt an assessment.
+            }
+        });
+        const announcementSettings = root.querySelector('[data-region="announcement-settings"]');
+        if (announcementSettings) {
+            announcementSettings.hidden = false;
+        }
+    }
+
+    const preserveExternalFocus = () => {
+        const active = document.activeElement;
+        // Disabling a submit button can return focus to the document body.
+        return active && active !== document.body && active !== document.documentElement && !content.contains(active);
+    };
+
+    const announce = message => {
+        if (announcements) {
+            announcements.textContent = message;
+        }
+    };
+
+    root.addEventListener('click', event => {
+        const link = event.target.closest('[data-conversation-jump]');
+        if (!link || !content.contains(link) || event.button !== 0
+                || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) {
+            return;
+        }
+        const target = document.getElementById(link.dataset.conversationJump);
+        if (!target || !content.contains(target)) {
+            return;
+        }
+        event.preventDefault();
+        const history = target.closest('[data-region="lesson-history"]');
+        if (history) {
+            history.open = true;
+        }
+        target.focus({preventScroll: true});
+        target.scrollIntoView({block: 'nearest'});
+    });
+
+    const startWaiting = action => {
+        clearSlowTimer();
+        attachRequestFeedback();
+        setRequestHelp('');
+        error.hidden = true;
+        error.textContent = '';
+        if (requestFeedback) {
+            requestFeedback.hidden = false;
+            requestFeedback.dataset.state = 'waiting';
+        }
+        status.textContent = processingMessage(action);
+        announce(status.textContent);
+        const serial = waitSerial;
+        slowTimer = window.setTimeout(() => {
+            if (!busy || !root.isConnected || serial !== waitSerial) {
+                return;
+            }
+            slowTimer = null;
+            const message = root.dataset.processingSlow;
+            if (message) {
+                status.textContent = message;
+                announce(message);
+            }
+        }, 15000);
+    };
+
+    const setBusy = (value, action = '') => {
         busy = value;
         content.setAttribute('aria-busy', String(value));
         content.querySelectorAll('button, input[type="submit"]').forEach(control => {
@@ -50,38 +258,100 @@ export const init = selector => {
             control.readOnly = value;
         });
         if (value) {
-            status.textContent = root.dataset.processing;
+            startWaiting(action);
+        } else {
+            clearSlowTimer();
         }
     };
 
-    const showError = message => {
+    const showError = (message, moveFocus = true, help = '') => {
+        announce('');
+        status.textContent = '';
+        attachRequestFeedback();
+        setRequestHelp(help);
+        if (requestFeedback) {
+            requestFeedback.hidden = false;
+            requestFeedback.dataset.state = 'error';
+        }
         // Neither a provider error nor a transport error is trusted HTML.
         error.textContent = message;
         error.hidden = false;
-        error.focus({preventScroll: true});
-        error.scrollIntoView({block: 'nearest'});
+        if (moveFocus) {
+            error.focus({preventScroll: true});
+            error.scrollIntoView({block: 'nearest'});
+        }
     };
+
+    window.addEventListener('pagehide', () => {
+        clearSlowTimer();
+        // A suspended request must not replace a conversation restored by browser Back.
+        responseSerial++;
+    });
+
+    window.addEventListener('pageshow', event => {
+        if (event.persisted) {
+            // Back navigation can restore the page as it was while leaving.
+            // Let the server's revision check reconcile any saved draft changes.
+            responseSerial++;
+            setBusy(false);
+            status.textContent = '';
+            announce('');
+            setRequestHelp('');
+            error.hidden = true;
+            error.textContent = '';
+            if (requestFeedback) {
+                requestFeedback.hidden = true;
+                requestFeedback.dataset.state = 'idle';
+            }
+            attachRequestFeedback();
+            updateReplyEditor();
+        }
+    });
 
     root.addEventListener('submit', async event => {
         const form = event.target.closest('form[data-action]');
         if (!form || !content.contains(form)) {
             return;
         }
+        if (busy) {
+            event.preventDefault();
+            return;
+        }
+        const submitter = event.submitter;
+        const action = submitter && submitter.name === 'action' ? submitter.value : form.dataset.action;
+        if (action === 'pause') {
+            // Use a normal POST so the server saves the draft and returns to the course.
+            // Do not disable form controls: the submitter and reply must be included in the POST.
+            busy = true;
+            startWaiting(action);
+            return;
+        }
         event.preventDefault();
-        if (busy || !form.reportValidity()) {
+        updateReplyEditor();
+        if (action !== 'finish' && !form.reportValidity()) {
             return;
         }
         const replyBox = content.querySelector('textarea[name="reply"]');
         const draft = replyBox ? replyBox.value : '';
-        if (form.dataset.action === 'reply' && !draft.trim()) {
+        if (action === 'reply' && !draft.trim()) {
             replyBox.focus();
+            return;
+        }
+        const confirmation = form.elements.namedItem('confirmed');
+        const confirmed = Boolean(confirmation && confirmation.value === '1');
+        if (action === 'finish' && (!confirmed || draft.trim())) {
+            showError(!confirmed ? root.dataset.confirmrequired : root.dataset.unsent);
+            if (draft.trim()) {
+                replyBox.focus();
+            }
             return;
         }
         const previousMessages = new Set(Array.from(content.querySelectorAll('[data-message-id]'),
             node => node.dataset.messageId));
         error.hidden = true;
         error.textContent = '';
-        setBusy(true);
+        setBusy(true, action);
+        const serial = ++responseSerial;
 
         try {
             // core/ajax supplies the Moodle session key and standard authenticated endpoint.
@@ -89,16 +359,42 @@ export const init = selector => {
                 methodname: 'mod_masteryagent_update_conversation',
                 args: {
                     cmid: Number(root.dataset.cmid),
-                    action: form.dataset.action,
+                    action,
                     state: form.elements.namedItem('state').value,
-                    reply: form.dataset.action === 'reply' ? draft : '',
+                    reply: draft,
+                    ...(action === 'finish' ? {confirmed} : {}),
                 },
             }])[0];
+            if (serial !== responseSerial || !root.isConnected) {
+                return;
+            }
             if (!response || typeof response.html !== 'string' || typeof response.stale !== 'boolean') {
                 throw new Error(root.dataset.error);
             }
+            // Capture at response time: learners may browse history while waiting for the evaluator.
+            const expandableSections = '[data-region="lesson-history"], [data-region="original-scenario"]';
+            const sectionKey = node => `${node.dataset.region}:${node.dataset.sectionKey}`;
+            const historyState = new Map(Array.from(content.querySelectorAll(expandableSections),
+                node => [sectionKey(node), node.open]));
+            const browsing = document.activeElement;
+            const keepExternalFocus = preserveExternalFocus();
+            const preserveFocus = content.contains(browsing) && browsing.closest(
+                '[data-region="lesson-history"], [data-region="conversation-navigation"], '
+                + '[data-region="current-lesson"], [data-region="reply-context"], [data-region="original-scenario"]');
+            const browsingId = preserveFocus ? browsing.id : '';
+            const browsingTop = preserveFocus ? browsing.getBoundingClientRect().top : 0;
+            if (requestFeedback && content.contains(requestFeedback)) {
+                // Preserve the mounted error/status nodes before replacing their surrounding fragment.
+                root.insertBefore(requestFeedback, content);
+            }
             // HTML comes only from the plugin's escaped, learner-only PHP renderer.
             content.innerHTML = response.html;
+            attachRequestFeedback();
+            content.querySelectorAll(expandableSections).forEach(node => {
+                if (historyState.has(sectionKey(node))) {
+                    node.open = historyState.get(sectionKey(node));
+                }
+            });
             const newReplyBox = content.querySelector('textarea[name="reply"]');
             if (response.stale && draft) {
                 if (newReplyBox) {
@@ -108,32 +404,66 @@ export const init = selector => {
                     recoveredDraft.hidden = false;
                 }
             }
+            updateReplyEditor();
             setBusy(false);
             status.textContent = root.dataset.updated;
             if (response.stale) {
-                showError(response.warning || root.dataset.error);
+                const help = [root.dataset.recoveryStale,
+                    !recoveredDraft.hidden ? root.dataset.recoveryDraft : ''].filter(Boolean).join(' ');
+                showError(response.warning || root.dataset.error, !keepExternalFocus, help);
             } else {
+                setRequestHelp('');
+                if (requestFeedback) {
+                    requestFeedback.dataset.state = 'success';
+                }
                 recoveredDraft.hidden = true;
                 recoveredDraft.querySelector('textarea').value = '';
                 const results = content.querySelector('[data-region="results"]');
-                const focusTarget = results || newReplyBox;
-                if (focusTarget) {
-                    focusTarget.focus({preventScroll: true});
-                }
-                const firstNewAgent = Array.from(content.querySelectorAll('.masteryagent-agent[data-message-id]'))
-                    .find(node => !previousMessages.has(node.dataset.messageId));
-                const scrollTarget = results || firstNewAgent || focusTarget;
-                if (scrollTarget) {
-                    scrollTarget.scrollIntoView({block: 'nearest'});
+                const newAgents = Array.from(content.querySelectorAll('.masteryagent-agent[data-message-id]'))
+                    .filter(node => !previousMessages.has(node.dataset.messageId));
+                const fullAnnouncement = !announcementMode || announcementMode.value === 'full';
+                const feedbackAnnouncement = fullAnnouncement ? newAgents.map(node => {
+                    const role = node.querySelector('.masteryagent-role');
+                    const message = node.querySelector('.masteryagent-text');
+                    return role && message ? `${role.textContent}: ${message.textContent}` : node.textContent.trim();
+                }).join('\n\n') : (newAgents.length ? root.dataset.newfeedback : '');
+                announce(results ? (root.dataset.resultsready || root.dataset.updated)
+                    : feedbackAnnouncement || root.dataset.updated);
+                const restoredFocus = browsingId ? document.getElementById(browsingId) : null;
+                if (restoredFocus && content.contains(restoredFocus)) {
+                    // A lesson may have just closed while the learner was reading one of its messages.
+                    const history = restoredFocus.closest('[data-region="lesson-history"]');
+                    if (history && restoredFocus.tagName !== 'SUMMARY') {
+                        history.open = true;
+                    }
+                    restoredFocus.focus({preventScroll: true});
+                    window.scrollBy(0, restoredFocus.getBoundingClientRect().top - browsingTop);
+                } else if (!keepExternalFocus) {
+                    const focusTarget = results || newReplyBox;
+                    if (focusTarget) {
+                        focusTarget.focus({preventScroll: true});
+                        focusTarget.scrollIntoView({block: 'nearest'});
+                    }
                 }
             }
-            notifyFilterContentUpdated([content]);
+            // Filter notification failure must not turn a confirmed save into a misleading retry prompt.
+            try {
+                notifyFilterContentUpdated([content]);
+            } catch (exception) {
+                // The escaped transcript and feedback remain readable without optional filters.
+            }
         } catch (exception) {
+            if (serial !== responseSerial || !root.isConnected) {
+                return;
+            }
             // Do not replay mutations automatically: a network error may follow a successful save.
             // Keep the form's old revision so a manual retry cannot submit the same turn twice.
             setBusy(false);
             status.textContent = '';
-            showError(exception && exception.message ? exception.message : root.dataset.error);
+            const retainedReply = content.querySelector('textarea[name="reply"]');
+            const help = action === 'reply' && draft && retainedReply && retainedReply.value === draft
+                ? root.dataset.recoveryReply : root.dataset.recoveryAction;
+            showError(exception && exception.message ? exception.message : root.dataset.error, !preserveExternalFocus(), help);
         }
     });
 };

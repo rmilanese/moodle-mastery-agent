@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" ?>
-<XMLDB PATH="mod/masteryagent/db" VERSION="20260916" COMMENT="XMLDB file for Moodle mod/masteryagent"
+<XMLDB PATH="mod/masteryagent/db" VERSION="20260917" COMMENT="XMLDB file for Moodle mod/masteryagent"
     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
     xsi:noNamespaceSchemaLocation="../../../lib/xmldb/xmldb.xsd"
 >
@@ -37,6 +37,7 @@
         <FIELD NAME="masteryagentid" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
         <FIELD NAME="userid" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
         <FIELD NAME="status" TYPE="char" LENGTH="20" NOTNULL="true" DEFAULT="inprogress" SEQUENCE="false"/>
+        <FIELD NAME="draftreply" TYPE="text" NOTNULL="false" SEQUENCE="false" COMMENT="Unsent answer saved when the learner pauses; never included in assessment evidence."/>
         <FIELD NAME="turnsused" TYPE="int" LENGTH="4" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="Replies used on the current lesson."/>
         <FIELD NAME="lessonindex" TYPE="int" LENGTH="4" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="Position in the lesson sequence."/>
         <FIELD NAME="lessonscores" TYPE="text" NOTNULL="false" SEQUENCE="false" COMMENT="Per-lesson results recorded as each lesson closes."/>
