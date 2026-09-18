@@ -24,18 +24,26 @@ const settle = () => new Promise(resolve => setTimeout(resolve, 0));
 const form = (action, state, extra = '') => `<form data-action="${action}" method="post" action="unexpected-navigation.html">
 <input name="state" type="hidden" value="${state}">${extra}<button type="submit">${action}</button></form>`;
 const active = (state = 'state1', id = 1) => `<div class="masteryagent-agent" data-message-id="${id}">Question ${id}</div>
-${form('reply', state, '<label for="reply">Reply</label><textarea id="reply" name="reply" required></textarea>')}${form('finish',state)}`;
+<form data-action="reply" method="post" action="unexpected-navigation.html">
+<input name="state" type="hidden" value="${state}"><input name="confirmed" type="hidden" value="1">
+<label for="reply">Reply</label><textarea id="reply" name="reply" required maxlength="8000"></textarea>
+<button name="action" value="reply">Send reply</button>
+<button name="action" value="pause" formnovalidate>Save and leave</button>
+<details><summary>Submit final assessment</summary><p>Unanswered lessons contribute zero.</p>
+<button name="action" value="finish" formnovalidate>Yes, submit and score</button></details></form>`;
 const finished = () => `<div data-region="results" tabindex="-1">Score: 3 of 4</div>${form('start', 'finished')}`;
 const mount = (html = form('start','new')) => {
     pending.length = 0; filterUpdates = 0;
-    document.querySelector('#fixture').innerHTML = `<div id="masteryagent-app" data-cmid="42" data-processing="Working" data-updated="Updated" data-error="Request failed">
+    document.querySelector('#fixture').innerHTML = `<div id="masteryagent-app" data-cmid="42" data-processing="Working" data-updated="Updated" data-error="Request failed" data-unsent="Send or clear your draft first" data-confirmrequired="Confirm final submission">
 <div data-region="error" role="alert" tabindex="-1" hidden></div><div data-region="status" role="status"></div>
 <div data-region="draft" hidden><textarea readonly></textarea></div><div data-region="content" aria-busy="false">${html}</div></div>`;
     window.conversation.init('#masteryagent-app');
 };
 const submit = (action, reply) => {
     if (reply !== undefined) q('[name="reply"]').value = reply;
-    q(`form[data-action="${action}"]`).requestSubmit();
+    const button = q(`button[name="action"][value="${action}"]`);
+    if (button) button.form.requestSubmit(button);
+    else q(`form[data-action="${action}"]`).requestSubmit();
 };
 const respond = async (html, stale = false, warning = '') => {
     pending.at(-1).resolve({html, stale, warning}); await settle();
@@ -52,10 +60,11 @@ const tests = [
 }],
 ['Repeated submit and finish are blocked while a reply is pending', async () => {
     mount(active()); submit('reply', 'My answer');
-    for(const action of ['reply','finish']) q(`form[data-action="${action}"]`).dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));
+    for(const action of ['reply','finish']) q('form').dispatchEvent(new SubmitEvent('submit',{
+        bubbles:true,cancelable:true,submitter:q(`button[value="${action}"]`)}));
     assert(pending.length === 1, 'Duplicate request sent');
     assert(q('[name="reply"]').readOnly, 'Reply remained editable while pending');
-    assert(q('form[data-action="finish"] button').disabled, 'Finish remained enabled');
+    assert(q('button[value="finish"]').disabled, 'Finish remained enabled');
     await respond(active('state2',3));
     assert(q('[name="reply"]').value === '', 'Successful reply did not clear draft');
     assert(!q('[name="reply"]').readOnly, 'Reply remained read-only');
@@ -107,6 +116,64 @@ const tests = [
     assert(q('[name="reply"]').value==='Keep my draft','Draft lost');
     assert(!q('form[data-action="reply"] button').disabled,'Form disabled after error');
     assert(!q('[data-region="error"]').hidden,'Error missing');
+}],
+['Opening and closing final confirmation keeps the draft and sends nothing', async () => {
+    mount(active());q('[name="reply"]').value='Still writing';
+    assert(!q('details').open,'Confirmation should begin closed');
+    q('summary').click();assert(q('details').open,'Confirmation did not open');
+    q('summary').click();assert(!q('details').open,'Confirmation did not close');
+    assert(pending.length===0,'Opening confirmation submitted the assessment');
+    assert(q('[name="reply"]').value==='Still writing','Draft changed');
+}],
+['Unsent text blocks final submission until it is sent or cleared', async () => {
+    mount(active());submit('finish','Still writing');
+    assert(pending.length===0,'Unsent answer was discarded');
+    assert(q('[data-region="error"]').textContent==='Send or clear your draft first','Missing draft warning');
+    assert(document.activeElement===q('[name="reply"]'),'Draft should receive focus');
+    assert(q('[name="reply"]').value==='Still writing','Draft lost');
+    submit('finish','');
+    assert(pending.length===1 && pending[0].request.args.action==='finish','Empty reply incorrectly blocked finish');
+    assert(pending[0].request.args.confirmed===true,'Explicit confirmation missing');
+    await respond(finished());
+}],
+['Save and leave uses a native POST containing the exact draft and pause action', async () => {
+    for(const draft of ['', '  Unsent answer\nsecond line']) {
+        mount(active());let captured;
+        q('#masteryagent-app').addEventListener('submit',event=>{
+            captured={blocked:event.defaultPrevented,data:new FormData(event.target,event.submitter)};
+            event.preventDefault();
+        },{once:true});
+        submit('pause',draft);
+        assert(captured && !captured.blocked,'Save and leave should use normal form submission');
+        assert(captured.data.get('action')==='pause','Pause action missing from POST');
+        assert(captured.data.get('reply')===draft,'Draft changed or missing from POST');
+        assert(captured.data.get('state')==='state1','Revision missing from POST');
+        assert(pending.length===0,'Pause called the AI conversation AJAX action');
+    }
+}],
+['Save and leave is blocked while an answer is being processed', async () => {
+    mount(active());submit('reply','Already sending');
+    const event=new SubmitEvent('submit',{bubbles:true,cancelable:true,submitter:q('button[value="pause"]')});
+    q('form').dispatchEvent(event);
+    assert(event.defaultPrevented,'Pause navigated away during a reply');
+    assert(pending.length===1,'Concurrent request created');
+    await respond(active('state2',3));
+}],
+['An old form without confirmation cannot finalize an attempt', async () => {
+    mount(active());q('[name="confirmed"]').remove();submit('finish');
+    assert(pending.length===0,'Unconfirmed request sent');
+    assert(q('[data-region="error"]').textContent==='Confirm final submission','Confirmation warning missing');
+}],
+['Returning through browser history restores usable controls after pausing', async () => {
+    mount(active());
+    q('#masteryagent-app').addEventListener('submit',event=>event.preventDefault(),{once:true});
+    submit('pause','Saved for later');
+    window.dispatchEvent(new PageTransitionEvent('pageshow',{persisted:true}));
+    assert(q('[data-region="status"]').textContent==='','Stale processing status remained');
+    submit('reply','Saved for later');
+    assert(pending.length===1,'Back navigation left the conversation blocked');
+    await respond(active('state2',3),true,'Review latest conversation');
+    assert(q('[name="reply"]').value==='Saved for later','History recovery lost the draft');
 }],
 ];
 (async()=>{

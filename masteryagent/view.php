@@ -66,16 +66,22 @@ $current = attempt::get_latest($instance, (int) $USER->id);
 
 // AJAX intercepts these forms when JavaScript is available. Keep a safe POST fallback.
 $draft = '';
+$draftoverride = null;
 if ($action !== '' && data_submitted()) {
     require_sesskey();
     $draft = optional_param('reply', '', PARAM_RAW);
+    $draftoverride = $draft;
     try {
         $result = \mod_masteryagent\conversation::process(
-            $instance, $context, $action, required_param('state', PARAM_ALPHANUM), $draft
+            $instance, $context, $action, required_param('state', PARAM_ALPHANUM), $draft,
+            optional_param('confirmed', false, PARAM_BOOL)
         );
         $current = $result['attempt'];
         if ($result['stale']) {
             $error = get_string('conversationchanged', 'mod_masteryagent');
+        } else if ($action === 'pause') {
+            redirect(new moodle_url('/course/view.php', ['id' => $course->id]),
+                get_string('pausesaved', 'mod_masteryagent'));
         } else {
             redirect(new moodle_url('/mod/masteryagent/view.php', ['id' => $cm->id]));
         }
@@ -136,6 +142,8 @@ echo html_writer::start_div('masteryagent-app', [
     'data-processing' => get_string('processing', 'mod_masteryagent'),
     'data-updated' => get_string('conversationupdated', 'mod_masteryagent'),
     'data-error' => get_string('ajaxerror', 'mod_masteryagent'),
+    'data-unsent' => get_string('finishunsent', 'mod_masteryagent'),
+    'data-confirmrequired' => get_string('finishconfirmationrequired', 'mod_masteryagent'),
 ]);
 echo html_writer::div($error === null ? '' : s($error), 'alert alert-danger', [
     'data-region' => 'error', 'role' => 'alert', 'tabindex' => '-1',
@@ -151,11 +159,7 @@ echo html_writer::div(
     ]),
     'mb-3', ['data-region' => 'draft'] + ($showdraft ? [] : ['hidden' => 'hidden'])
 );
-$html = \mod_masteryagent\output\conversation_view::render($instance, $cm, $sequence, $current);
-if ($draft !== '') {
-    // Preserve the learner's text on an unsuccessful non-JavaScript submission.
-    $html = str_replace('</textarea>', s($draft) . '</textarea>', $html);
-}
+$html = \mod_masteryagent\output\conversation_view::render($instance, $cm, $sequence, $current, $draftoverride);
 echo html_writer::div($html, '', ['data-region' => 'content', 'aria-busy' => 'false']);
 echo html_writer::end_div();
 echo $OUTPUT->footer();

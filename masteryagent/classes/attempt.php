@@ -104,6 +104,7 @@ class attempt {
             'masteryagentid' => $instance->id,
             'userid' => $userid,
             'status' => self::STATUS_INPROGRESS,
+            'draftreply' => '',
             'turnsused' => 0,
             'lessonindex' => 0,
             'lessonscores' => json_encode([]),
@@ -175,6 +176,26 @@ class attempt {
      */
     public function turns_left(): int {
         return max(0, (int) $this->instance->maxturns - $this->turns_used());
+    }
+
+    /**
+     * The unsent answer saved when the learner chose to pause.
+     *
+     * @return string
+     */
+    public function draft_reply(): string {
+        return (string) ($this->record->draftreply ?? '');
+    }
+
+    /**
+     * Save a draft without adding a turn, calling AI or changing a grade.
+     *
+     * @param string $draft Unsent text, validated by the conversation service.
+     */
+    public function save_draft(string $draft): void {
+        global $DB;
+        $this->record->draftreply = $draft;
+        $DB->set_field('masteryagent_attempt', 'draftreply', $draft, ['id' => $this->record->id]);
     }
 
     /**
@@ -301,6 +322,9 @@ class attempt {
 
         $this->add_message('agent', $result['reply'], $lessonkey, $this->record->turnsused);
 
+        // Only clear the draft after a successful turn; the caller rolls back failures.
+        $this->save_draft('');
+
         if ($result['ready_to_close'] || $this->turns_left() <= 0) {
             $this->close_lesson($sequence, $contextid);
         }
@@ -336,6 +360,9 @@ class attempt {
             'max' => (int) $this->instance->maxgrade,
             'summary' => $assessment['summary'],
             'dimensions' => $assessment['dimensions'],
+            // Snapshot public labels and readings so later uploads do not rewrite this feedback.
+            'dimension_names' => $lesson->dimension_names(),
+            'learning_resources' => $lesson->learning_resources(),
             'strengths' => $assessment['strengths'],
             'gaps' => $assessment['gaps'],
             'next_step' => $assessment['next_step'],
@@ -417,6 +444,7 @@ class attempt {
         }
 
         $this->record->status = self::STATUS_FINISHED;
+        $this->record->draftreply = '';
         $this->record->score = $total;
         $this->record->summary = $summary;
         $this->record->timefinished = time();

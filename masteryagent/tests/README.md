@@ -1,6 +1,6 @@
 # Running the mastery agent tests
 
-86 PHPUnit tests covering the question-set parser, lesson selection, prompt
+95 PHPUnit tests covering the question-set parser, lesson selection, prompt
 construction, the conversation engine, gradebook, and AJAX endpoint. They never call a real
 AI provider — a scripted responder stands in for one — so they cost nothing to
 run and are deterministic.
@@ -36,9 +36,11 @@ vendor/bin/phpunit public/mod/masteryagent/tests/attempt_test.php
 vendor/bin/phpunit --filter test_a_sequence_advances_on_its_own
 ```
 
-The original suite contained 71 tests. The AJAX update adds 15 tests in
-`external_test.php`, for 86 tests in total. This updated PHP suite has not been
-executed in the packaging environment; run it on a development Moodle site.
+The original suite contained 71 tests. The AJAX update added 15 tests in
+`external_test.php`. The learning-plan update adds 3 tests in
+`learning_plan_test.php`. Pausing and final submission add 6 more tests in
+`external_test.php`, for 95 tests in total. The PHP suite has not been
+executed in this workspace; run it on a development Moodle site.
 
 ## What each file covers
 
@@ -91,11 +93,12 @@ rather than against any real question set.
 
 ## Browser regression checks
 
-`browser/runner.html` runs 11 DOM-level regression scenarios against the shipped
+`browser/runner.html` runs 17 DOM-level regression scenarios against the shipped
 AMD bundle, with mocked `core/ajax` and filter-event modules. Serve the plugin
 directory locally, then open `tests/browser/runner.html`. The runner contains
 only synthetic test data and never contacts an AI provider or Moodle server.
-All 11 scenarios passed in a browser during packaging.
+All 17 scenarios passed in headless Microsoft Edge during 0.4.2 packaging.
+They cover reply, pause, confirmation, draft recovery and browser history behavior.
 
 An equivalent standalone Playwright suite is also included. With Node.js,
 Playwright, and its Chromium browser available, run:
@@ -104,9 +107,9 @@ Playwright, and its Chromium browser available, run:
 node --test tests/browser/conversation.test.cjs
 ```
 
-Set `CHROME_PATH` if using an existing Chrome executable. The Playwright suite
-could not launch Chrome in the packaging sandbox; the in-browser runner was
-used instead. The UI checks do not replace the Moodle/PHP suite.
+Set `CHROME_PATH` if using an existing Chromium browser executable. The standalone
+Playwright suite was not run for 0.4.2; the in-browser runner was used instead.
+The UI checks do not replace the Moodle/PHP suite.
 
 ## Integration checks on a Moodle test site
 
@@ -121,3 +124,30 @@ used instead. The UI checks do not replace the Moodle/PHP suite.
 - Disable JavaScript and confirm that the POST fallback still works and rejects
   invalid session keys. AJAX session-key protection is provided by Moodle's
   authenticated `core/ajax` endpoint.
+
+## Learning-plan regression checks (0.4.1)
+
+`learning_plan_test.php` adds three tests for completed feedback, saved public
+names/readings after content replacement, historical results with missing fields,
+and escaping/unsafe reading URLs. They exercise the shared renderer and AJAX
+completion path without contacting an AI provider. These new tests have not been
+run in this Windows workspace, which has no Moodle/PHP runtime.
+
+After upgrading a test site, complete a lesson and check the three feedback
+sections, readable skill names, reading links and page references. Check an old
+completed attempt too. At a narrow viewport the feedback cards should stack.
+
+## Pause and final-submission checks (0.4.2)
+
+The six additional PHP tests cover pause/resume with no AI calls, turns or grade;
+stale and overlong draft rejection; explicit final confirmation; blocking unsent
+text; saved drafts surviving AI failures; and confirmation counts/POST rendering.
+These tests have not run here because the workspace has no Moodle/PHP runtime.
+
+On a Moodle test site, check both fresh installation and upgrade from 0.4.1.
+Pause with a partially written answer, return from the course, and verify the
+exact draft and remaining replies. Repeat with JavaScript disabled. Confirm an
+empty reply can be paused, and an unsent reply blocks final submission. Check
+the final grade after deliberately ending a partially completed sequence. Use
+two tabs to verify an old pause cannot overwrite a newer draft. A failed normal
+POST must retain the edited draft once, including an explicitly cleared box.

@@ -37,9 +37,11 @@ class conversation_view {
      * @param \stdClass $cm Course module record.
      * @param sequence $sequence Selected lessons.
      * @param attempt|null $current Current user's attempt.
+     * @param string|null $draftoverride Unsent text from a failed normal POST, if any.
      * @return string Escaped HTML.
      */
-    public static function render(\stdClass $instance, \stdClass $cm, sequence $sequence, ?attempt $current): string {
+    public static function render(\stdClass $instance, \stdClass $cm, sequence $sequence, ?attempt $current,
+            ?string $draftoverride = null): string {
         global $OUTPUT;
         $out = '';
         if ($current === null) {
@@ -102,9 +104,16 @@ class conversation_view {
                 'class' => 'masteryagent-form',
                 'data-action' => 'reply',
             ]);
-            $out .= self::form_fields($cm, $current, 'reply');
+            // One form keeps the current draft attached to every action, including without JavaScript.
+            $out .= self::form_fields($cm, $current, '');
+            $out .= html_writer::empty_tag('input', [
+                'type' => 'hidden', 'name' => 'confirmed', 'value' => '1',
+            ]);
+            if ($draftoverride === null && $current->draft_reply() !== '') {
+                $out .= html_writer::tag('p', get_string('draftrestored', 'mod_masteryagent'), ['class' => 'text-muted']);
+            }
             $out .= html_writer::tag('label', get_string('yourreply', 'mod_masteryagent'), ['for' => 'masteryagent-reply']);
-            $out .= html_writer::tag('textarea', '', [
+            $out .= html_writer::tag('textarea', s($draftoverride ?? $current->draft_reply()), [
                 'name' => 'reply',
                 'id' => 'masteryagent-reply',
                 'maxlength' => attempt::MAX_REPLY_CHARS,
@@ -114,19 +123,35 @@ class conversation_view {
                 'placeholder' => get_string('replyplaceholder', 'mod_masteryagent'),
             ]);
             $out .= html_writer::div(
-                html_writer::empty_tag('input', [
-                    'type' => 'submit',
-                    'class' => 'btn btn-primary mt-2',
-                    'value' => get_string('sendreply', 'mod_masteryagent'),
+                html_writer::tag('button', get_string('sendreply', 'mod_masteryagent'), [
+                    'type' => 'submit', 'name' => 'action', 'value' => 'reply',
+                    'class' => 'btn btn-primary',
+                ])
+                . html_writer::tag('button', get_string('saveandleave', 'mod_masteryagent'), [
+                    'type' => 'submit', 'name' => 'action', 'value' => 'pause',
+                    'class' => 'btn btn-secondary', 'formnovalidate' => 'formnovalidate',
                 ]),
-                'mt-2'
+                'masteryagent-attempt-actions mt-2'
+            );
+            $out .= html_writer::tag('p', get_string('pausehelp', 'mod_masteryagent'), ['class' => 'text-muted mt-2']);
+
+            $unanswered = max(0, $sequence->count() - $current->lesson_index()
+                - ($current->turns_used() > 0 ? 1 : 0));
+            $out .= html_writer::tag('details',
+                html_writer::tag('summary', get_string('finishassessment', 'mod_masteryagent'))
+                . html_writer::tag('p', get_string('finishprogress', 'mod_masteryagent', (object) [
+                    'done' => count($current->lesson_results()), 'total' => $sequence->count(),
+                ]), ['class' => 'mt-3'])
+                . html_writer::tag('p', get_string('finishconsequences', 'mod_masteryagent'))
+                . html_writer::tag('p', get_string('finishunanswered', 'mod_masteryagent', $unanswered))
+                . html_writer::tag('p', get_string('finishunsent', 'mod_masteryagent'))
+                . html_writer::tag('button', get_string('confirmfinish', 'mod_masteryagent'), [
+                    'type' => 'submit', 'name' => 'action', 'value' => 'finish',
+                    'class' => 'btn btn-outline-danger', 'formnovalidate' => 'formnovalidate',
+                ]),
+                ['class' => 'masteryagent-finish-confirmation mt-3']
             );
             $out .= html_writer::end_tag('form');
-
-            $out .= html_writer::div(
-                self::action_form($cm, $current, 'finish', 'finishnow', 'btn btn-link'),
-                'mt-2'
-            );
         } else {
             $record = $current->get_record();
             $results = $current->lesson_results();
@@ -170,7 +195,7 @@ class conversation_view {
     }
 
     /**
-     * Render a start, retry or finish POST form, also handled by the AJAX module.
+     * Render a start or retry POST form, also handled by the AJAX module.
      *
      * @param \stdClass $cm Course module.
      * @param attempt|null $current Latest attempt.
@@ -203,6 +228,9 @@ class conversation_view {
         $out = '';
         foreach (['id' => $cm->id, 'action' => $action, 'sesskey' => sesskey(),
                 'state' => conversation::state($current)] as $name => $value) {
+            if ($name === 'action' && $action === '') {
+                continue;
+            }
             $out .= html_writer::empty_tag('input', ['type' => 'hidden', 'name' => $name, 'value' => $value]);
         }
         return $out;
@@ -220,49 +248,131 @@ class conversation_view {
             . (int) ($result['max'] ?? 0));
         $out .= html_writer::tag('p', nl2br(s((string) ($result['summary'] ?? ''))));
 
+        $out .= html_writer::div(
+            self::feedback_section('learningstrengths', $result['strengths'] ?? [], 'learningstrengthsempty')
+            . self::feedback_section('learninggaps', $result['gaps'] ?? [], 'learninggapsempty'),
+            'masteryagent-feedback-grid'
+        );
+
+        $nextstep = is_string($result['next_step'] ?? null) ? trim($result['next_step']) : '';
+        $out .= html_writer::div(
+            html_writer::tag('h6', get_string('learningnextstep', 'mod_masteryagent'))
+            . html_writer::tag('p', $nextstep !== '' ? nl2br(s($nextstep))
+                : get_string('learningnextstepempty', 'mod_masteryagent')),
+            'masteryagent-next-step'
+        );
+        $out .= self::render_readings($result['learning_resources'] ?? []);
+
         $verdictmap = [
             'met' => 'verdictmetshort',
             'partial' => 'verdictpartial',
             'notmet' => 'verdictnotmetshort',
         ];
+        $names = is_array($result['dimension_names'] ?? null) ? $result['dimension_names'] : [];
         $rows = '';
+        $position = 0;
         foreach ((array) ($result['dimensions'] ?? []) as $dimension) {
             if (!is_array($dimension)) {
                 continue;
             }
+            $position++;
+            $id = is_string($dimension['id'] ?? null) ? $dimension['id'] : '';
+            $name = is_string($names[$id] ?? null) ? trim($names[$id]) : '';
+            if ($name === '') {
+                // Older question sets have only internal IDs; do not invent a skill name.
+                $name = get_string('learningdimensionfallback', 'mod_masteryagent', $position);
+            }
             $raw = preg_replace('/[^a-z]/', '', strtolower((string) ($dimension['verdict'] ?? '')));
             $label = isset($verdictmap[$raw])
                 ? get_string($verdictmap[$raw], 'mod_masteryagent')
-                : s((string) ($dimension['verdict'] ?? ''));
+                : get_string('learningverdictunknown', 'mod_masteryagent');
             $rows .= html_writer::tag(
                 'tr',
-                html_writer::tag('td', s((string) ($dimension['id'] ?? '')))
+                html_writer::tag('th', s($name), ['scope' => 'row'])
                 . html_writer::tag('td', $label)
                 . html_writer::tag('td', s((string) ($dimension['comment'] ?? '')))
             );
         }
         if ($rows !== '') {
-            $out .= html_writer::tag(
+            $out .= html_writer::div(html_writer::tag(
                 'table',
-                html_writer::tag(
+                html_writer::tag('caption', get_string('learningbreakdown', 'mod_masteryagent'))
+                . html_writer::tag(
                     'thead',
                     html_writer::tag(
                         'tr',
-                        html_writer::tag('th', get_string('dimension', 'mod_masteryagent'))
-                        . html_writer::tag('th', get_string('verdict', 'mod_masteryagent'))
-                        . html_writer::tag('th', get_string('comment', 'mod_masteryagent'))
+                        html_writer::tag('th', get_string('learningskill', 'mod_masteryagent'), ['scope' => 'col'])
+                        . html_writer::tag('th', get_string('verdict', 'mod_masteryagent'), ['scope' => 'col'])
+                        . html_writer::tag('th', get_string('comment', 'mod_masteryagent'), ['scope' => 'col'])
                     )
                 ) . html_writer::tag('tbody', $rows),
                 ['class' => 'table table-sm']
-            );
+            ), 'table-responsive');
         }
 
-        if (!empty($result['next_step'])) {
-            $out .= html_writer::tag('p', html_writer::tag('strong', get_string('nextstep', 'mod_masteryagent'))
-                . ' ' . s((string) $result['next_step']));
-        }
+        return html_writer::div($out, 'masteryagent-learning-plan');
+    }
 
-        return $out;
+    /**
+     * Render learner feedback as escaped text, with an honest empty state.
+     *
+     * @param string $heading Language string for the heading.
+     * @param mixed $items Stored feedback.
+     * @param string $empty Language string when no feedback was recorded.
+     * @return string
+     */
+    private static function feedback_section(string $heading, $items, string $empty): string {
+        $list = '';
+        foreach (is_array($items) ? $items : [] as $item) {
+            if (is_string($item) && trim($item) !== '') {
+                $list .= html_writer::tag('li', s(trim($item)));
+            }
+        }
+        return html_writer::div(
+            html_writer::tag('h6', get_string($heading, 'mod_masteryagent'))
+            . ($list !== '' ? html_writer::tag('ul', $list)
+                : html_writer::tag('p', get_string($empty, 'mod_masteryagent'), ['class' => 'text-muted'])),
+            'masteryagent-feedback-section'
+        );
+    }
+
+    /**
+     * Render the reading references saved with this result.
+     *
+     * Only HTTP(S) links are allowed. References without usable URLs remain text.
+     *
+     * @param mixed $readings Stored public reading references.
+     * @return string
+     */
+    private static function render_readings($readings): string {
+        $list = '';
+        foreach (is_array($readings) ? $readings : [] as $reading) {
+            if (!is_array($reading) || !is_string($reading['title'] ?? null) || trim($reading['title']) === '') {
+                continue;
+            }
+            $title = s(trim($reading['title']));
+            $url = is_string($reading['url'] ?? null) ? trim($reading['url']) : '';
+            $scheme = strtolower((string) parse_url($url, PHP_URL_SCHEME));
+            if (filter_var($url, FILTER_VALIDATE_URL) !== false && in_array($scheme, ['http', 'https'], true)) {
+                $title = html_writer::link(new moodle_url($url), $title);
+            }
+            $details = [];
+            foreach (['edition_or_date', 'coursebook_page_or_section'] as $key) {
+                if (is_string($reading[$key] ?? null) && trim($reading[$key]) !== '') {
+                    $details[] = trim($reading[$key]);
+                }
+            }
+            $list .= html_writer::tag('li', $title
+                . ($details ? html_writer::div(s(implode(' · ', $details)), 'text-muted') : ''));
+        }
+        return html_writer::div(
+            html_writer::tag('h6', get_string('learningreadings', 'mod_masteryagent'))
+            . ($list !== ''
+                ? html_writer::tag('p', get_string('learningreadingshelp', 'mod_masteryagent'))
+                    . html_writer::tag('ul', $list)
+                : html_writer::tag('p', get_string('learningreadingsempty', 'mod_masteryagent'), ['class' => 'text-muted'])),
+            'masteryagent-readings'
+        );
     }
 
 }

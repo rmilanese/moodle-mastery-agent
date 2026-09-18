@@ -46,3 +46,58 @@
 .masteryagent-app [aria-busy="true"] textarea {
     opacity: 0.75;
 }
+
+.masteryagent-attempt-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+}
+
+.masteryagent-finish-confirmation {
+    border-top: 1px solid #d6d9dc;
+    padding-top: 1rem;
+}
+
+.masteryagent-finish-confirmation summary {
+    cursor: pointer;
+    font-weight: 600;
+}
+
+.masteryagent-feedback-grid {
+    display: grid;
+    gap: 1rem;
+    margin: 1rem 0;
+}
+
+.masteryagent-feedback-section,
+.masteryagent-next-step,
+.masteryagent-readings {
+    border: 1px solid #d6d9dc;
+    border-radius: 0.5rem;
+    padding: 1rem;
+    overflow-wrap: anywhere;
+}
+
+.masteryagent-next-step,
+.masteryagent-readings {
+    margin-bottom: 1rem;
+}
+
+.masteryagent-learning-plan ul {
+    padding-inline-start: 1.25rem;
+    margin-bottom: 0;
+}
+
+.masteryagent-learning-plan li + li {
+    margin-top: 0.5rem;
+}
+
+.masteryagent-learning-plan caption {
+    caption-side: top;
+}
+
+@media (min-width: 48rem) {
+    .masteryagent-feedback-grid {
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    }
+}
