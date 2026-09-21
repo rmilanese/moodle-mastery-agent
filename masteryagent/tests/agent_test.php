@@ -239,6 +239,28 @@ final class agent_test extends \advanced_testcase {
         $this->assertSame(0.0, $this->agent()->final_assessment([], [])['score']);
     }
 
+    public function test_numeric_scores_are_normalised_to_the_stored_precision_before_returning_feedback(): void {
+        foreach ([[2.6, 2.6], [2.999, 3.0], [2.994, 2.99], [3.999, 4.0]] as [$provided, $expected]) {
+            agent::set_test_responder(static fn(string $prompt) => json_encode(['score' => $provided, 'summary' => 'Feedback.']));
+            $this->assertSame($expected, $this->agent()->final_assessment([], [])['score']);
+        }
+    }
+
+    public function test_course_summary_omits_unassessed_lessons_and_keeps_two_decimal_scores(): void {
+        $this->stub_ai();
+        $skipped = ['status' => 'notassessed', 'lesson_id' => 'SKIPPED_LESSON', 'title' => 'Not assessed',
+            'score' => 0, 'max' => 4];
+        $this->agent()->course_summary([
+            ['lesson_id' => 'S01', 'title' => 'Assessed lesson', 'score' => 2.99, 'max' => 4], $skipped,
+        ]);
+        $this->assertCount(1, $this->sentprompts);
+        $this->assertStringContainsString('scored 2.99 of 4', $this->sentprompts[0]);
+        $this->assertStringContainsString('Total: 2.99 of 4', $this->sentprompts[0]);
+        $this->assertStringNotContainsString('SKIPPED_LESSON', $this->sentprompts[0]);
+        $this->assertSame('', $this->agent()->course_summary([$skipped]));
+        $this->assertCount(1, $this->sentprompts, 'An entirely unassessed attempt must not call the AI summary.');
+    }
+
     public function test_course_summary_reports_across_lessons(): void {
         $this->stub_ai(['coursesummary' => 'You explain well but stop short of mechanism.']);
 

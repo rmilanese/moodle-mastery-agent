@@ -17,6 +17,10 @@
         "L01-MD01",
         "L01-MD03"
       ],
+      "dimension_names": {
+        "L01-MD01": "Learning, Education, and Training for Warfighting",
+        "L01-MD03": "Responsibilities for a Culture of Learning"
+      },
       "target_educational_objectives": [
         "L01-EO01",
         "L01-EO02",
@@ -78,6 +82,9 @@
       "target_mastery_dimensions": [
         "L02-MD04"
       ],
+      "dimension_names": {
+        "L02-MD04": "Levels of War and Interrelationships"
+      },
       "target_educational_objectives": [
         "L02-EO09"
       ],
@@ -138,6 +145,9 @@
       "target_mastery_dimensions": [
         "L03-MD03"
       ],
+      "dimension_names": {
+        "L03-MD03": "Integrated Deterrence and Campaigning"
+      },
       "target_educational_objectives": [
         "L03-EO05"
       ],
@@ -200,6 +210,10 @@
         "L04-MD01",
         "L04-MD02"
       ],
+      "dimension_names": {
+        "L04-MD01": "DoD Governance and Military Department Functions",
+        "L04-MD02": "Department of the Army and Brigade Combat Teams"
+      },
       "target_educational_objectives": [
         "L04-EO01",
         "L04-EO02",
@@ -264,6 +278,10 @@
         "L05-MD04",
         "L05-MD05"
       ],
+      "dimension_names": {
+        "L05-MD04": "Amphibious Ships, ARGs, and ESGs",
+        "L05-MD05": "Marine Corps Functions and Operating Organization"
+      },
       "target_educational_objectives": [
         "L05-EO10",
         "L05-EO11",
@@ -329,6 +347,10 @@
         "L06-MD02",
         "L06-MD04"
       ],
+      "dimension_names": {
+        "L06-MD02": "Joint Force Options, JTF Types, and Command Relationships",
+        "L06-MD04": "Functional Components"
+      },
       "target_educational_objectives": [
         "L06-EO04",
         "L06-EO06",
@@ -393,6 +415,10 @@
         "L07-MD02",
         "L07-MD03"
       ],
+      "dimension_names": {
+        "L07-MD02": "Conditions-Based Strategic Relationships",
+        "L07-MD03": "Russian Goals and Military Strategy"
+      },
       "target_educational_objectives": [
         "L07-EO03",
         "L07-EO04",
@@ -457,6 +483,10 @@
         "L08-MD01",
         "L08-MD02"
       ],
+      "dimension_names": {
+        "L08-MD01": "PRC Goals and Military Strategy",
+        "L08-MD02": "PLA Core Capabilities"
+      },
       "target_educational_objectives": [
         "L08-EO01",
         "L08-EO02",
@@ -521,6 +551,10 @@
         "L09-MD02",
         "L09-MD03"
       ],
+      "dimension_names": {
+        "L09-MD02": "Control measures and their symbols",
+        "L09-MD03": "Fire support coordination measures"
+      },
       "target_educational_objectives": [
         "L09-EO03",
         "L09-EO04",
@@ -587,6 +621,10 @@
         "L10-MD02",
         "L10-MD03"
       ],
+      "dimension_names": {
+        "L10-MD02": "Dual cognitive systems",
+        "L10-MD03": "Bias types and causes"
+      },
       "target_educational_objectives": [
         "L10-EO02",
         "L10-EO03",
@@ -648,6 +686,10 @@
         "L11-MD01",
         "L11-MD03"
       ],
+      "dimension_names": {
+        "L11-MD01": "Joint doctrine purpose and organization",
+        "L11-MD03": "Marine Corps doctrine hierarchy"
+      },
       "target_educational_objectives": [
         "L11-EO01",
         "L11-EO02",
@@ -711,6 +753,10 @@
         "L12-MD04",
         "L12-MD05"
       ],
+      "dimension_names": {
+        "L12-MD04": "Injury prevention practices",
+        "L12-MD05": "Performance nutrition and hydration"
+      },
       "target_educational_objectives": [
         "L12-EO07",
         "L12-EO08"
@@ -773,6 +819,9 @@
       "target_mastery_dimensions": [
         "L13-MD04"
       ],
+      "dimension_names": {
+        "L13-MD04": "Unit-level prevention and leader action"
+      },
       "target_educational_objectives": [
         "L13-EO06"
       ],

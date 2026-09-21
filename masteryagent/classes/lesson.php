@@ -186,6 +186,47 @@ class lesson {
     }
 
     /**
+     * Public display names for the dimensions assessed by this lesson.
+     *
+     * Names come from the question set, never from model-generated feedback.
+     *
+     * @return array Dimension id to display name.
+     */
+    public function dimension_names(): array {
+        $names = $this->get('dimension_names', []);
+        if (!is_array($names)) {
+            return [];
+        }
+        $out = [];
+        foreach ($this->dimensions() as $id) {
+            if (is_string($id) && isset($names[$id]) && is_string($names[$id]) && trim($names[$id]) !== '') {
+                $out[$id] = trim($names[$id]);
+            }
+        }
+        return $out;
+    }
+
+    /**
+     * Public reading references, excluding evaluator notes and evidence criteria.
+     *
+     * @return array Reading titles, editions, page references and optional URLs.
+     */
+    public function learning_resources(): array {
+        $out = [];
+        foreach ($this->sources() as $source) {
+            if (!is_array($source) || !is_string($source['title'] ?? null) || trim($source['title']) === '') {
+                continue;
+            }
+            $reading = [];
+            foreach (['title', 'edition_or_date', 'coursebook_page_or_section', 'url'] as $key) {
+                $reading[$key] = is_string($source[$key] ?? null) ? trim($source[$key]) : '';
+            }
+            $out[] = $reading;
+        }
+        return $out;
+    }
+
+    /**
      * Educational objectives this question targets.
      *
      * @return array

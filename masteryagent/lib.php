@@ -279,13 +279,19 @@ function masteryagent_update_grades(stdClass $instance, int $userid = 0): void {
         $feedback .= '<p>' . nl2br(s((string) $record->summary)) . '</p>';
 
         $results = json_decode((string) $record->lessonscores, true);
-        if (is_array($results) && count($results) > 1) {
+        if (is_array($results) && $results) {
             $items = '';
             foreach ($results as $result) {
+                if (!is_array($result)) {
+                    continue;
+                }
                 $items .= '<li>' . s(trim(
                     ($result['lesson_id'] ?? '') . ' ' . ($result['title'] ?? '')
-                )) . ' &mdash; ' . s((string) ($result['score'] ?? '')) . '/'
-                    . (int) ($result['max'] ?? $instance->maxgrade) . '</li>';
+                )) . ' &mdash; ' . (isset($result['score']) ? format_float((float) $result['score'], 2)
+                    . '/' . (int) ($result['max'] ?? $instance->maxgrade)
+                    : get_string('historynotrecorded', 'mod_masteryagent'))
+                    . (($result['status'] ?? '') === 'notassessed'
+                        ? ' — ' . get_string('lessonnotassessed', 'mod_masteryagent') : '') . '</li>';
             }
             $feedback .= '<p><strong>' . get_string('perlessonscores', 'mod_masteryagent') . '</strong></p>'
                 . '<ul>' . $items . '</ul>';

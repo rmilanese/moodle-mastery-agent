@@ -83,5 +83,14 @@ function xmldb_masteryagent_upgrade($oldversion) {
         upgrade_mod_savepoint(true, 2026091601, 'masteryagent');
     }
 
+    if ($oldversion < 2026091705) {
+        $table = new xmldb_table('masteryagent_attempt');
+        $field = new xmldb_field('draftreply', XMLDB_TYPE_TEXT, null, null, null, null, null, 'status');
+        if (!$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+        upgrade_mod_savepoint(true, 2026091705, 'masteryagent');
+    }
+
     return true;
 }

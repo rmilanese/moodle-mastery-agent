@@ -40,9 +40,10 @@ class update_conversation extends external_api {
     public static function execute_parameters(): external_function_parameters {
         return new external_function_parameters([
             'cmid' => new external_value(PARAM_INT, 'Course module id'),
-            'action' => new external_value(PARAM_ALPHA, 'start, reply or finish'),
+            'action' => new external_value(PARAM_ALPHA, 'start, reply, clarify, pause or finish'),
             'state' => new external_value(PARAM_ALPHANUM, 'Revision from the displayed form'),
-            'reply' => new external_value(PARAM_RAW, 'Learner reply', VALUE_DEFAULT, ''),
+            'reply' => new external_value(PARAM_RAW, 'Learner reply; ignored for clarify', VALUE_DEFAULT, ''),
+            'confirmed' => new external_value(PARAM_BOOL, 'Final submission confirmed', VALUE_DEFAULT, false),
         ]);
     }
 
@@ -53,13 +54,16 @@ class update_conversation extends external_api {
      * @param string $action Action to perform.
      * @param string $state Revision the learner saw.
      * @param string $reply Learner reply.
+     * @param bool $confirmed Whether the learner confirmed final submission.
      * @return array Learner-only HTML and status.
      */
-    public static function execute(int $cmid, string $action, string $state, string $reply = ''): array {
+    public static function execute(int $cmid, string $action, string $state, string $reply = '',
+            bool $confirmed = false): array {
         global $CFG, $DB;
         require_once($CFG->dirroot . '/mod/masteryagent/lib.php');
         $params = self::validate_parameters(self::execute_parameters(), [
             'cmid' => $cmid, 'action' => $action, 'state' => $state, 'reply' => $reply,
+            'confirmed' => $confirmed,
         ]);
         $cm = get_coursemodule_from_id('masteryagent', $params['cmid'], 0, false, MUST_EXIST);
         $context = \context_module::instance($cm->id);
@@ -68,7 +72,8 @@ class update_conversation extends external_api {
         require_capability('mod/masteryagent:attempt', $context);
 
         $instance = $DB->get_record('masteryagent', ['id' => $cm->instance], '*', MUST_EXIST);
-        $result = conversation::process($instance, $context, $params['action'], $params['state'], $params['reply']);
+        $result = conversation::process($instance, $context, $params['action'], $params['state'],
+            $params['reply'], $params['confirmed']);
         return [
             'html' => conversation_view::render($instance, $cm, sequence::from_instance($instance), $result['attempt']),
             'stale' => $result['stale'],

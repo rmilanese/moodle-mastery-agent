@@ -11,6 +11,10 @@
       "estimated_response_minutes": 3,
       "question_text": "A patrol plans its route entirely from a digital map display and is surprised by terrain that slows it to a halt. Explain what the planners should have drawn from the ground itself, and how they should combine map study, reconnaissance and the reports of others when the picture disagrees.",
       "target_mastery_dimensions": ["S01-MD01", "S01-MD02"],
+      "dimension_names": {
+        "S01-MD01": "Reading terrain",
+        "S01-MD02": "Comparing sources"
+      },
       "target_educational_objectives": ["S01-EO01", "S01-EO02"],
       "selection_rationale": "Joins terrain interpretation to the habit of reconciling conflicting sources.",
       "follow_up_probes": [
@@ -58,6 +62,9 @@
       "estimated_response_minutes": 3,
       "question_text": "A team must act before it can gather everything it would like to know. Explain how a leader should decide what is enough to act on, what should be held back for later, and how the decision itself should be communicated so subordinates can adapt when the situation changes.",
       "target_mastery_dimensions": ["S02-MD01"],
+      "dimension_names": {
+        "S02-MD01": "Deciding with incomplete information"
+      },
       "target_educational_objectives": ["S02-EO01", "S02-EO03"],
       "selection_rationale": "Separates decisiveness from recklessness and ties intent to adaptation.",
       "follow_up_probes": [
@@ -104,6 +111,10 @@
       "estimated_response_minutes": 3,
       "question_text": "A unit holds a review after every event, yet the same failures keep recurring. Explain why a review can produce agreement without producing change, and what a leader must do differently so that what is learned actually alters how the unit performs.",
       "target_mastery_dimensions": ["S03-MD01", "S03-MD02"],
+      "dimension_names": {
+        "S03-MD01": "Learning from feedback",
+        "S03-MD02": "Improving performance"
+      },
       "target_educational_objectives": ["S03-EO02"],
       "selection_rationale": "Targets the gap between discussing a lesson and institutionalising it.",
       "follow_up_probes": [

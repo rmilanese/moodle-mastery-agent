@@ -39,6 +39,7 @@ trait helper_trait {
      *   closeafter     int    Close each lesson after this many learner replies (default 1).
      *   scores         array  Score to award per lesson id, e.g. ['S01' => 4]. Default 3.
      *   reply          string The evaluator's conversational reply.
+     *   clarification  string An ungraded plain-language question clarification.
      *   coursesummary  string The closing summary for a multi-lesson run.
      *   covered        array  Evidence codes to report as covered.
      *   misconceptions array  Misconception codes to report as still outstanding.
@@ -53,6 +54,7 @@ trait helper_trait {
             'closeafter' => 1,
             'scores' => [],
             'reply' => 'Understood. Say more about the second half.',
+            'clarification' => 'Explain what the question asks you to decide and why.',
             'coursesummary' => 'Across the run you explained concepts but rarely showed mechanism.',
             'covered' => ['SE1'],
             'misconceptions' => [],
@@ -65,6 +67,10 @@ trait helper_trait {
 
         agent::set_test_responder(function (string $prompt) use ($config, &$turns) {
             $this->sentprompts[] = $prompt;
+
+            if (str_contains($prompt, '=== QUESTION CLARIFICATION ===')) {
+                return json_encode(['clarification' => $config['clarification']]);
+            }
 
             if (str_contains($prompt, '=== LESSON RESULTS ===')) {
                 return json_encode(['summary' => $config['coursesummary']]);

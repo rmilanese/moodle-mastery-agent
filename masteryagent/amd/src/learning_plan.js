@@ -1,0 +1,102 @@
+// This file is part of Moodle - http://moodle.org/
+//
+// Moodle is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// Moodle is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with Moodle. If not, see <http://www.gnu.org/licenses/>.
+
+/**
+ * Print or copy an already rendered learning plan after an explicit learner action.
+ *
+ * @module mod_masteryagent/learning_plan
+ * @copyright 2026 MCU-NPS AI Learning Initiatives
+ * @license http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
+ */
+
+/**
+ * Enhance the export page while retaining its native manual-copy fallback.
+ *
+ * @param {string} selector The learning-plan export wrapper.
+ */
+export const init = selector => {
+    const root = document.querySelector(selector);
+    if (!root || root.dataset.learningPlanInitialized === 'true') {
+        return;
+    }
+    const text = root.querySelector('[data-region="plan-text"]');
+    const fallback = root.querySelector('[data-region="copy-fallback"]');
+    const status = root.querySelector('[data-region="copy-status"]');
+    if (!text || !fallback || !status) {
+        return;
+    }
+    root.dataset.learningPlanInitialized = 'true';
+    let copying = false;
+
+    root.addEventListener('click', async event => {
+        const button = event.target instanceof Element ? event.target.closest('button[data-action]') : null;
+        if (!button || !root.contains(button)) {
+            return;
+        }
+        const action = button.dataset.action;
+        if (action !== 'print-plan' && action !== 'copy-plan') {
+            return;
+        }
+        event.preventDefault();
+
+        if (action === 'print-plan') {
+            try {
+                window.print();
+            } catch (error) {
+                status.textContent = root.dataset.printfailed || '';
+            }
+            return;
+        }
+
+        if (copying) {
+            return;
+        }
+        const originalFocus = document.activeElement;
+        copying = true;
+        // Retain keyboard focus on the button while preventing duplicate clipboard requests.
+        button.setAttribute('aria-disabled', 'true');
+        button.setAttribute('aria-busy', 'true');
+        status.textContent = '';
+        try {
+            const clipboard = navigator.clipboard;
+            if (!clipboard || typeof clipboard.writeText !== 'function') {
+                throw new Error('Clipboard API unavailable');
+            }
+            await clipboard.writeText(text.value);
+            if (root.isConnected) {
+                status.textContent = root.dataset.copied || '';
+            }
+        } catch (error) {
+            if (root.isConnected) {
+                const mayFocus = document.activeElement === button || document.activeElement === originalFocus;
+                fallback.open = true;
+                status.textContent = root.dataset.copyfailed || '';
+                if (mayFocus) {
+                    text.focus({preventScroll: true});
+                    text.select();
+                    text.scrollIntoView({block: 'nearest'});
+                }
+            }
+        } finally {
+            copying = false;
+            button.removeAttribute('aria-disabled');
+            button.removeAttribute('aria-busy');
+        }
+    });
+
+    root.querySelectorAll('button[data-action="print-plan"], button[data-action="copy-plan"]').forEach(button => {
+        button.hidden = false;
+    });
+};

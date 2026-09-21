@@ -41,6 +41,7 @@ class conversation {
         return hash('sha256', json_encode([
             (int) $record->id, $record->status, (int) $record->lessonindex,
             (int) $record->turnsused, (int) $record->timefinished, $last ? (int) $last->id : 0,
+            $current->draft_reply(),
         ]));
     }
 
@@ -53,13 +54,14 @@ class conversation {
      *
      * @param \stdClass $instance Activity record.
      * @param \context_module $context Validated activity context.
-     * @param string $action start, reply or finish.
+     * @param string $action start, reply, clarify, pause or finish.
      * @param string $state Revision displayed when the form was rendered.
-     * @param string $reply Learner text, for the reply action only.
+     * @param string $reply Current reply box text, including an unsent draft.
+     * @param bool $confirmed Whether the learner confirmed final submission.
      * @return array Latest attempt and whether this was a stale request.
      */
     public static function process(\stdClass $instance, \context_module $context, string $action,
-            string $state, string $reply = ''): array {
+            string $state, string $reply = '', bool $confirmed = false): array {
         global $DB, $USER;
 
         $cm = get_coursemodule_from_id('masteryagent', $context->instanceid, 0, false, MUST_EXIST);
@@ -71,8 +73,12 @@ class conversation {
         if (isguestuser() || !isloggedin()) {
             throw new \moodle_exception('requireloginerror', 'error');
         }
-        if (!in_array($action, ['start', 'reply', 'finish'], true)) {
+        if (!in_array($action, ['start', 'reply', 'clarify', 'pause', 'finish'], true)) {
             throw new \invalid_parameter_exception('Unknown conversation action.');
+        }
+        if ($action === 'clarify') {
+            // The reply box is an unsent draft, never input to this independent question-only action.
+            $reply = '';
         }
 
         $sequence = sequence::from_instance($instance);
@@ -99,13 +105,22 @@ class conversation {
             } else if ($current === null || $current->is_finished()) {
                 throw new \moodle_exception('attemptnotavailable', 'mod_masteryagent');
             }
+            if (in_array($action, ['reply', 'pause', 'finish'], true)
+                    && \core_text::strlen($reply) > attempt::MAX_REPLY_CHARS) {
+                throw new \moodle_exception('replytoolong', 'mod_masteryagent', '', attempt::MAX_REPLY_CHARS);
+            }
+            if ($action === 'finish') {
+                if (!$confirmed) {
+                    throw new \moodle_exception('finishconfirmationrequired', 'mod_masteryagent');
+                }
+                if (trim($reply) !== '') {
+                    throw new \moodle_exception('finishunsent', 'mod_masteryagent');
+                }
+            }
             if ($action === 'reply') {
                 $reply = trim($reply);
                 if ($reply === '') {
                     throw new \moodle_exception('replyrequired', 'mod_masteryagent');
-                }
-                if (\core_text::strlen($reply) > attempt::MAX_REPLY_CHARS) {
-                    throw new \moodle_exception('replytoolong', 'mod_masteryagent', '', attempt::MAX_REPLY_CHARS);
                 }
             }
 
@@ -116,6 +131,10 @@ class conversation {
                     $current = attempt::start($instance, (int) $USER->id, $sequence);
                 } else if ($action === 'reply') {
                     $current->submit($reply, $sequence, (int) $context->id);
+                } else if ($action === 'clarify') {
+                    $current->clarify($sequence, (int) $context->id);
+                } else if ($action === 'pause') {
+                    $current->save_draft($reply);
                 } else {
                     $current->finish_now($sequence, (int) $context->id);
                 }

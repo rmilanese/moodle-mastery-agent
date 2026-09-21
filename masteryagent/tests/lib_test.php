@@ -301,6 +301,30 @@ final class lib_test extends \advanced_testcase {
         ]));
     }
 
+    public function test_early_submission_records_decimal_grade_and_skipped_feedback_and_keeps_it_after_a_weaker_retry(): void {
+        $student = $this->getDataGenerator()->create_user();
+        $this->getDataGenerator()->enrol_user($student->id, $this->course->id, 'student');
+        $instance = $this->getDataGenerator()->create_module('masteryagent', [
+            'course' => $this->course->id, 'lessonkeys' => 'S01,S02',
+        ]);
+        $cm = get_coursemodule_from_instance('masteryagent', $instance->id, $this->course->id, false, MUST_EXIST);
+        $contextid = (int) \context_module::instance($cm->id)->id;
+        $sequence = sequence::from_instance($instance);
+        foreach ([2.6, 1.1] as $score) {
+            $this->stub_ai(['closeafter' => 99, 'scores' => ['S01' => $score]]);
+            $current = attempt::start($instance, (int) $student->id, $sequence);
+            $current->submit('A submitted answer before finishing early.', $sequence, $contextid);
+            $current->finish_now($sequence, $contextid);
+            $grades = grade_get_grades($this->course->id, 'mod', 'masteryagent', $instance->id, $student->id);
+            $grade = reset($grades->items)->grades[$student->id];
+            $this->assertSame(2.6, (float) $grade->grade);
+            $this->assertStringContainsString('2.60/4', $grade->feedback);
+            $this->assertStringContainsString('0.00/4', $grade->feedback);
+            $this->assertStringContainsString('S02 Deciding Under Time Pressure', $grade->feedback);
+            $this->assertStringContainsString(get_string('lessonnotassessed', 'mod_masteryagent'), $grade->feedback);
+        }
+    }
+
     public function test_deleting_something_that_is_not_there(): void {
         $this->assertFalse(masteryagent_delete_instance(-1));
     }

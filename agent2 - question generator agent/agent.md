@@ -273,3 +273,10 @@ still generate and validate the JSON underneath it.
   dimension that cannot be fairly assessed in a 2-3 minute response.
 - Never claim that generated questions, rubrics, scores, or LMS integration are operationally
   validated without human subject-matter review and technical testing.
+
+## Public names for student results
+
+Include `dimension_names` in every question record, mapping each targeted dimension
+ID to its exact `name` in the upstream rubric. These names and public reading
+references are shown to learners after assessment. Follow the spec's public
+learning-plan metadata rules; keep criteria, probes and reviewer notes private.

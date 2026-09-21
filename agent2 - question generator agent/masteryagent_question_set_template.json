@@ -15,6 +15,10 @@
         "L01-MD01",
         "L01-MD03"
       ],
+      "dimension_names": {
+        "L01-MD01": "Learning, Education, and Training for Warfighting",
+        "L01-MD03": "Responsibilities for a Culture of Learning"
+      },
       "target_educational_objectives": [
         "L01-EO01",
         "L01-EO02",

@@ -79,6 +79,64 @@ class attempt {
     }
 
     /**
+     * Fetch one attempt owned by a learner in this activity.
+     *
+     * The same missing-record failure covers unknown IDs and attempts outside this scope.
+     * Callers must establish course access before supplying the current learner's user ID.
+     *
+     * @param \stdClass $instance Activity instance record.
+     * @param int $userid Learner user ID.
+     * @param int $attemptid Attempt ID.
+     * @return self
+     * @throws \dml_missing_record_exception When no attempt matches all three identifiers.
+     */
+    public static function get_for_user(\stdClass $instance, int $userid, int $attemptid): self {
+        global $DB;
+        $record = $DB->get_record('masteryagent_attempt', [
+            'id' => $attemptid, 'masteryagentid' => $instance->id, 'userid' => $userid,
+        ], '*', MUST_EXIST);
+        return new self($record, $instance);
+    }
+
+    /**
+     * Count a learner's attempts in this activity, including unfinished attempts.
+     *
+     * @param \stdClass $instance Activity instance record.
+     * @param int $userid Learner user ID.
+     * @return int
+     */
+    public static function count_for_user(\stdClass $instance, int $userid): int {
+        global $DB;
+        return $DB->count_records('masteryagent_attempt', [
+            'masteryagentid' => $instance->id, 'userid' => $userid,
+        ]);
+    }
+
+    /**
+     * Fetch a bounded page of a learner's attempt metadata, newest ID first.
+     *
+     * Listing history does not load drafts, feedback, evidence or lesson result payloads.
+     * Negative pages start at the first page; page size is restricted to 1 through 100.
+     *
+     * @param \stdClass $instance Activity instance record.
+     * @param int $userid Learner user ID.
+     * @param int $page Zero-based page number.
+     * @param int $perpage Requested page size (default 10).
+     * @return \stdClass[] Summary records keyed by attempt ID.
+     */
+    public static function page_for_user(\stdClass $instance, int $userid, int $page = 0, int $perpage = 10): array {
+        global $DB;
+        $page = max(0, $page);
+        $perpage = max(1, min(100, $perpage));
+        if ($page > intdiv(PHP_INT_MAX, $perpage)) {
+            return [];
+        }
+        return $DB->get_records('masteryagent_attempt', [
+            'masteryagentid' => $instance->id, 'userid' => $userid,
+        ], 'id DESC', 'id, status, lessonindex, turnsused, score, timestarted, timefinished', $page * $perpage, $perpage);
+    }
+
+    /**
      * Fetch every attempt for an activity.
      *
      * @param \stdClass $instance Activity instance record.
@@ -104,6 +162,7 @@ class attempt {
             'masteryagentid' => $instance->id,
             'userid' => $userid,
             'status' => self::STATUS_INPROGRESS,
+            'draftreply' => '',
             'turnsused' => 0,
             'lessonindex' => 0,
             'lessonscores' => json_encode([]),
@@ -178,6 +237,26 @@ class attempt {
     }
 
     /**
+     * The unsent answer saved when the learner chose to pause.
+     *
+     * @return string
+     */
+    public function draft_reply(): string {
+        return (string) ($this->record->draftreply ?? '');
+    }
+
+    /**
+     * Save a draft without adding a turn, calling AI or changing a grade.
+     *
+     * @param string $draft Unsent text, validated by the conversation service.
+     */
+    public function save_draft(string $draft): void {
+        global $DB;
+        $this->record->draftreply = $draft;
+        $DB->set_field('masteryagent_attempt', 'draftreply', $draft, ['id' => $this->record->id]);
+    }
+
+    /**
      * The running evidence ledger for the current lesson.
      *
      * @return array
@@ -191,7 +270,7 @@ class attempt {
     }
 
     /**
-     * Results recorded for each lesson closed so far.
+     * Saved lesson results, including explicit unassessed snapshots after final submission.
      *
      * @return array
      */
@@ -211,6 +290,65 @@ class attempt {
     }
 
     /**
+     * Return saved clarification only for the most recent evaluator message in an active attempt.
+     *
+     * Every newer agent message resets the association, even if its lesson key and turn number repeat.
+     *
+     * @return \stdClass|null Saved clarification record, or null.
+     */
+    public function current_clarification(): ?\stdClass {
+        if ($this->is_finished()) {
+            return null;
+        }
+        $question = null;
+        $clarification = null;
+        foreach ($this->messages() as $message) {
+            if ($message->role === 'agent') {
+                $question = $message;
+                $clarification = null;
+            } else if ($message->role === 'clarification' && $question !== null
+                    && $message->lessonkey === $question->lessonkey && $clarification === null) {
+                $clarification = $message;
+            }
+        }
+        return $clarification;
+    }
+
+    /**
+     * Save one ungraded clarification for the current saved question, reusing it on repeated requests.
+     *
+     * The conversation service holds the learner lock and transaction while this method runs.
+     * Drafts, replies used, evidence and grades are never changed here.
+     *
+     * @param sequence $sequence Current lesson sequence.
+     * @param int $contextid Module context ID for the AI request.
+     * @return void
+     * @throws \moodle_exception When no active question exists or the provider fails.
+     */
+    public function clarify(sequence $sequence, int $contextid): void {
+        $lesson = $sequence->get($this->lesson_index());
+        if ($this->is_finished() || $lesson === null) {
+            throw new \moodle_exception('attemptnotavailable', 'mod_masteryagent');
+        }
+        $question = null;
+        foreach ($this->messages() as $message) {
+            if ($message->role === 'agent') {
+                $question = $message;
+            }
+        }
+        if ($question === null || trim((string) $question->message) === ''
+                || $question->lessonkey !== $sequence->key_for($this->lesson_index())) {
+            throw new \moodle_exception('attemptnotavailable', 'mod_masteryagent');
+        }
+        if ($this->current_clarification() !== null) {
+            return;
+        }
+        $agent = new agent($lesson, $this->instance, $contextid);
+        $text = $agent->clarify_question($question->message);
+        $this->add_message('clarification', $text, $question->lessonkey, (int) $question->turnno);
+    }
+
+    /**
      * The conversation for one lesson, in the shape the agent expects.
      *
      * @param string $lessonkey Which lesson to extract.
@@ -219,7 +357,7 @@ class attempt {
     public function transcript_for(string $lessonkey): array {
         $transcript = [];
         foreach ($this->messages() as $message) {
-            if ($message->lessonkey !== $lessonkey) {
+            if ($message->lessonkey !== $lessonkey || !in_array($message->role, ['agent', 'student'], true)) {
                 continue;
             }
             $transcript[] = ['role' => $message->role, 'message' => $message->message];
@@ -230,7 +368,7 @@ class attempt {
     /**
      * Append a message to the conversation.
      *
-     * @param string $role Either agent or student.
+     * @param string $role Agent, student, or ungraded clarification.
      * @param string $message Message body.
      * @param string $lessonkey Which lesson the message belongs to.
      * @param int|null $turnno Turn number, defaults to the current turn count.
@@ -301,6 +439,9 @@ class attempt {
 
         $this->add_message('agent', $result['reply'], $lessonkey, $this->record->turnsused);
 
+        // Only clear the draft after a successful turn; the caller rolls back failures.
+        $this->save_draft('');
+
         if ($result['ready_to_close'] || $this->turns_left() <= 0) {
             $this->close_lesson($sequence, $contextid);
         }
@@ -311,10 +452,11 @@ class attempt {
      *
      * @param sequence $sequence The lessons being assessed.
      * @param int $contextid Module context id for the AI request.
+     * @param bool $advance Continue automatically after scoring; false when submitting the whole attempt early.
      * @return void
      * @throws \moodle_exception When the AI provider fails.
      */
-    protected function close_lesson(sequence $sequence, int $contextid): void {
+    protected function close_lesson(sequence $sequence, int $contextid, bool $advance = true): void {
         global $DB;
 
         $index = $this->lesson_index();
@@ -329,6 +471,7 @@ class attempt {
 
         $results = $this->lesson_results();
         $results[] = [
+            'status' => 'assessed',
             'key' => $lessonkey,
             'lesson_id' => $lesson->lesson_id(),
             'title' => $lesson->title(),
@@ -336,6 +479,9 @@ class attempt {
             'max' => (int) $this->instance->maxgrade,
             'summary' => $assessment['summary'],
             'dimensions' => $assessment['dimensions'],
+            // Snapshot public labels and readings so later uploads do not rewrite this feedback.
+            'dimension_names' => $lesson->dimension_names(),
+            'learning_resources' => $lesson->learning_resources(),
             'strengths' => $assessment['strengths'],
             'gaps' => $assessment['gaps'],
             'next_step' => $assessment['next_step'],
@@ -345,6 +491,9 @@ class attempt {
         $this->record->lessonscores = json_encode($results);
         $DB->set_field('masteryagent_attempt', 'lessonscores', $this->record->lessonscores, ['id' => $this->record->id]);
 
+        if (!$advance) {
+            return;
+        }
         $next = $index + 1;
         if ($next < $sequence->count()) {
             $this->advance_to($next, $sequence);
@@ -401,23 +550,58 @@ class attempt {
     protected function finalise_attempt(sequence $sequence, int $contextid): void {
         global $CFG, $DB;
 
+        if ($this->is_finished()) {
+            return;
+        }
         $results = $this->lesson_results();
+        foreach ($results as &$result) {
+            if (is_array($result) && !isset($result['status'])) {
+                // Complete the saved inventory for an active attempt begun before explicit lesson statuses existed.
+                $result['status'] = 'assessed';
+            }
+        }
+        unset($result);
+        $assessed = array_values(array_filter($results, static fn($result) =>
+            is_array($result) && ($result['status'] ?? 'assessed') !== 'notassessed'));
         $total = 0.0;
-        foreach ($results as $result) {
+        foreach ($assessed as $result) {
             $total += (float) ($result['score'] ?? 0);
         }
 
+        // Match existing snapshots by occurrence so even repeated question keys retain their sequence positions.
+        $savedkeys = [];
+        foreach ($results as $result) {
+            if (is_array($result)) {
+                $key = (string) ($result['key'] ?? '');
+                $savedkeys[$key] = ($savedkeys[$key] ?? 0) + 1;
+            }
+        }
+        foreach ($sequence->all() as $index => $lesson) {
+            $key = $sequence->key_for($index);
+            if (!empty($savedkeys[$key])) {
+                $savedkeys[$key]--;
+                continue;
+            }
+            $results[] = [
+                'status' => 'notassessed', 'key' => $key, 'lesson_id' => $lesson->lesson_id(),
+                'title' => $lesson->title(), 'score' => 0, 'max' => (int) $this->instance->maxgrade,
+                'learning_resources' => $lesson->learning_resources(),
+            ];
+        }
+
         $summary = '';
-        if ($sequence->is_multi() && !empty($results)) {
+        if ($sequence->is_multi() && !empty($assessed)) {
             $lastlesson = $sequence->get($sequence->count() - 1);
             $agent = new agent($lastlesson, $this->instance, $contextid);
-            $summary = $agent->course_summary($results);
-        } else if (!empty($results)) {
-            $summary = (string) ($results[0]['summary'] ?? '');
+            $summary = $agent->course_summary($assessed);
+        } else if (!empty($assessed)) {
+            $summary = (string) ($assessed[0]['summary'] ?? '');
         }
 
         $this->record->status = self::STATUS_FINISHED;
-        $this->record->score = $total;
+        $this->record->draftreply = '';
+        $this->record->score = round($total, 2);
+        $this->record->lessonscores = json_encode($results);
         $this->record->summary = $summary;
         $this->record->timefinished = time();
         $DB->update_record('masteryagent_attempt', $this->record);
@@ -429,8 +613,8 @@ class attempt {
     /**
      * Close the attempt early at the learner's request.
      *
-     * The current lesson is scored on what has been said; lessons never reached
-     * score zero by omission.
+     * An answered current lesson is scored without opening another question. Unanswered lessons
+     * are saved explicitly as not assessed and contribute zero points.
      *
      * @param sequence $sequence The lessons being assessed.
      * @param int $contextid Module context id for the AI request.
@@ -443,15 +627,11 @@ class attempt {
         }
 
         $lessonkey = $sequence->key_for($this->lesson_index());
-        if (count($this->transcript_for($lessonkey)) > 1) {
-            // Something was said about this lesson, so score it.
-            $index = $this->lesson_index();
-            $this->close_lesson($sequence, $contextid);
-            if ($this->lesson_index() !== $index && !$this->is_finished()) {
-                // More lessons remain, but the learner asked to stop.
-                $this->finalise_attempt($sequence, $contextid);
+        foreach ($this->transcript_for($lessonkey) as $message) {
+            if ($this->turns_used() > 0 && $message['role'] === 'student' && trim($message['message']) !== '') {
+                $this->close_lesson($sequence, $contextid, false);
+                break;
             }
-            return;
         }
 
         $this->finalise_attempt($sequence, $contextid);
@@ -465,7 +645,8 @@ class attempt {
     public function lessons_mastered(): int {
         $count = 0;
         foreach ($this->lesson_results() as $result) {
-            if ((float) ($result['score'] ?? 0) >= (float) $this->instance->threshold) {
+            if (is_array($result) && ($result['status'] ?? 'assessed') !== 'notassessed'
+                    && (float) ($result['score'] ?? 0) >= (float) $this->instance->threshold) {
                 $count++;
             }
         }
@@ -473,7 +654,7 @@ class attempt {
     }
 
     /**
-     * Whether every lesson assessed met the mastery threshold.
+     * Whether every lesson was assessed and met the mastery threshold.
      *
      * @return bool
      */
@@ -483,6 +664,11 @@ class attempt {
             // Attempts recorded before sequence mode carry only a total.
             return $this->record->score !== null
                 && (float) $this->record->score >= (float) $this->instance->threshold;
+        }
+        foreach ($results as $result) {
+            if (!is_array($result) || ($result['status'] ?? 'assessed') === 'notassessed') {
+                return false;
+            }
         }
         return $this->lessons_mastered() === count($results);
     }
